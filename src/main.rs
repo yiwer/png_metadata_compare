@@ -45,3 +45,9 @@ fn compare_pipeline_builds_diff_and_counts() {
 fn formats_summary_lines_for_sidebar() {
     ui::summary::formats_summary_lines_for_sidebar_test();
 }
+
+#[cfg(test)]
+#[test]
+fn hides_unchanged_nodes_when_only_differences_is_enabled() {
+    ui::tree::hides_unchanged_nodes_when_only_differences_is_enabled_test();
+}

@@ -114,12 +114,17 @@ fn default_open(node: &DiffNode) -> bool {
 }
 
 #[cfg(test)]
+pub(crate) fn hides_unchanged_nodes_when_only_differences_is_enabled_test() {
+    tests::hides_unchanged_nodes_when_only_differences_is_enabled();
+}
+
+#[cfg(test)]
 mod tests {
     use super::{TreeFilters, should_show};
     use crate::diff::{DiffNode, DiffStatus};
 
     #[test]
-    fn hides_unchanged_nodes_when_only_differences_is_enabled() {
+    pub(super) fn hides_unchanged_nodes_when_only_differences_is_enabled() {
         let filters = TreeFilters {
             only_differences: true,
             show_unchanged: true,
