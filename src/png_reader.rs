@@ -1,4 +1,5 @@
 use crate::error::CompareError;
+use std::path::Path;
 
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 const STOP_PLATE_KEYWORD: &str = "StopPlateMetadata";
@@ -54,6 +55,15 @@ pub fn extract_stop_plate_metadata(bytes: &[u8]) -> Result<String, CompareError>
     } else {
         Err(CompareError::TruncatedChunk)
     }
+}
+
+pub fn extract_stop_plate_metadata_from_file(path: &Path) -> Result<String, CompareError> {
+    let bytes = std::fs::read(path).map_err(|err| CompareError::FileRead {
+        path: path.to_path_buf(),
+        reason: err.to_string(),
+    })?;
+
+    extract_stop_plate_metadata(&bytes)
 }
 
 fn parse_stop_plate_itxt(data: &[u8]) -> Result<Option<String>, CompareError> {
@@ -183,8 +193,8 @@ mod tests {
         let mut png = png_with_chunks(Vec::new());
         png.extend_from_slice(b"trailing junk that is not a chunk");
 
-        let error =
-            extract_stop_plate_metadata(&png).expect_err("trailer bytes after IEND should be ignored");
+        let error = extract_stop_plate_metadata(&png)
+            .expect_err("trailer bytes after IEND should be ignored");
 
         assert!(matches!(error, CompareError::MissingStopPlateMetadata));
     }
@@ -194,8 +204,8 @@ mod tests {
         let mut png = Vec::from(b"\x89PNG\r\n\x1a\n".as_slice());
         png.extend(chunk(*b"IDAT", Vec::new()));
 
-        let error =
-            extract_stop_plate_metadata(&png).expect_err("missing IEND should be treated as malformed");
+        let error = extract_stop_plate_metadata(&png)
+            .expect_err("missing IEND should be treated as malformed");
 
         assert!(matches!(error, CompareError::TruncatedChunk));
     }

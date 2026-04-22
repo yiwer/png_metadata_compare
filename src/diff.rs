@@ -24,6 +24,21 @@ pub struct DiffNode {
     pub children: Vec<DiffNode>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct DiffSummary {
+    pub modified: usize,
+    pub added: usize,
+    pub removed: usize,
+    pub reordered: usize,
+    pub error: usize,
+}
+
+impl DiffSummary {
+    pub fn total(&self) -> usize {
+        self.modified + self.added + self.removed + self.reordered + self.error
+    }
+}
+
 type BusinessKeyFn = fn(&Value) -> Option<String>;
 
 struct KeyedArrayIndex<'a> {
@@ -58,7 +73,13 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
 
             let children = keys
                 .into_iter()
-                .map(|key| compare_values(&join_path(path, &key), left_map.get(&key), right_map.get(&key)))
+                .map(|key| {
+                    compare_values(
+                        &join_path(path, &key),
+                        left_map.get(&key),
+                        right_map.get(&key),
+                    )
+                })
                 .collect();
 
             aggregate_node(path, left.is_some(), right.is_some(), children)
@@ -82,15 +103,13 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
         (Some(Value::Array(left_items)), Some(Value::Array(right_items))) => {
             compare_array(path, Some(left_items), Some(right_items))
         }
-        (None, Some(Value::Array(right_items))) => {
-            compare_array(path, None, Some(right_items))
-        }
-        (Some(Value::Array(left_items)), None) => {
-            compare_array(path, Some(left_items), None)
-        }
+        (None, Some(Value::Array(right_items))) => compare_array(path, None, Some(right_items)),
+        (Some(Value::Array(left_items)), None) => compare_array(path, Some(left_items), None),
         _ => {
             let status = match (left, right) {
-                (Some(left_value), Some(right_value)) if left_value == right_value => DiffStatus::Unchanged,
+                (Some(left_value), Some(right_value)) if left_value == right_value => {
+                    DiffStatus::Unchanged
+                }
                 (None, Some(_)) => DiffStatus::Added,
                 (Some(_), None) => DiffStatus::Removed,
                 (Some(_), Some(_)) => DiffStatus::Modified,
@@ -107,7 +126,14 @@ fn compare_array(path: &str, left: Option<&[Value]>, right: Option<&[Value]>) ->
     let right_items = right.unwrap_or(&[]);
 
     if let Some(key_fn) = business_key_for_path(path) {
-        return compare_keyed_array(path, left.is_some(), right.is_some(), left_items, right_items, key_fn);
+        return compare_keyed_array(
+            path,
+            left.is_some(),
+            right.is_some(),
+            left_items,
+            right_items,
+            key_fn,
+        );
     }
 
     let max_len = left_items.len().max(right_items.len());
@@ -151,13 +177,21 @@ fn compare_keyed_array(
         let child_path = join_key_path(path, &key);
         match (left_index.items.get(&key), right_index.items.get(&key)) {
             (Some((left_pos, left_value)), Some((right_pos, right_value))) => {
-                children.push(compare_values(&child_path, Some(left_value), Some(right_value)));
+                children.push(compare_values(
+                    &child_path,
+                    Some(left_value),
+                    Some(right_value),
+                ));
                 if left_pos != right_pos {
                     children.push(reorder_node(&child_path, *left_pos, *right_pos));
                 }
             }
-            (Some((_, left_value)), None) => children.push(compare_values(&child_path, Some(left_value), None)),
-            (None, Some((_, right_value))) => children.push(compare_values(&child_path, None, Some(right_value))),
+            (Some((_, left_value)), None) => {
+                children.push(compare_values(&child_path, Some(left_value), None))
+            }
+            (None, Some((_, right_value))) => {
+                children.push(compare_values(&child_path, None, Some(right_value)))
+            }
             (None, None) => {}
         }
     }
@@ -216,9 +250,13 @@ fn business_key_for_path(path: &str) -> Option<BusinessKeyFn> {
     } else if path.ends_with("Lines") {
         Some(|value| {
             let line_name = value.get("LineName")?.as_str()?;
-            let direction = value.get("Direction").and_then(|direction| direction.as_str());
+            let direction = value
+                .get("Direction")
+                .and_then(|direction| direction.as_str());
             match direction {
-                Some(direction) if !direction.is_empty() => Some(format!("{line_name}|{direction}")),
+                Some(direction) if !direction.is_empty() => {
+                    Some(format!("{line_name}|{direction}"))
+                }
                 _ => Some(line_name.to_owned()),
             }
         })
@@ -237,7 +275,12 @@ fn business_key_for_path(path: &str) -> Option<BusinessKeyFn> {
     }
 }
 
-fn value_node(path: &str, status: DiffStatus, left: Option<&Value>, right: Option<&Value>) -> DiffNode {
+fn value_node(
+    path: &str,
+    status: DiffStatus,
+    left: Option<&Value>,
+    right: Option<&Value>,
+) -> DiffNode {
     DiffNode {
         path: join_path("", path),
         status: status.clone(),
@@ -250,7 +293,9 @@ fn value_node(path: &str, status: DiffStatus, left: Option<&Value>, right: Optio
 
 fn error_node(path: &str, left: Option<&CompareError>, right: Option<&CompareError>) -> DiffNode {
     let summary = match (left, right) {
-        (Some(left_err), Some(right_err)) => format!("Load errors: left={left_err}; right={right_err}"),
+        (Some(left_err), Some(right_err)) => {
+            format!("Load errors: left={left_err}; right={right_err}")
+        }
         (Some(left_err), None) => format!("Load error on left: {left_err}"),
         (None, Some(right_err)) => format!("Load error on right: {right_err}"),
         (None, None) => "Metadata load error".to_string(),
@@ -299,12 +344,27 @@ fn reorder_node(path: &str, left_pos: usize, right_pos: usize) -> DiffNode {
     }
 }
 
-fn aggregate_node(path: &str, left_present: bool, right_present: bool, children: Vec<DiffNode>) -> DiffNode {
+fn aggregate_node(
+    path: &str,
+    left_present: bool,
+    right_present: bool,
+    children: Vec<DiffNode>,
+) -> DiffNode {
     let status = match (left_present, right_present) {
         (false, true) => DiffStatus::Added,
         (true, false) => DiffStatus::Removed,
-        _ if children.iter().all(|child| child.status == DiffStatus::Unchanged) => DiffStatus::Unchanged,
-        _ if children.iter().any(|child| child.status == DiffStatus::Error) => DiffStatus::Error,
+        _ if children
+            .iter()
+            .all(|child| child.status == DiffStatus::Unchanged) =>
+        {
+            DiffStatus::Unchanged
+        }
+        _ if children
+            .iter()
+            .any(|child| child.status == DiffStatus::Error) =>
+        {
+            DiffStatus::Error
+        }
         _ => DiffStatus::Modified,
     };
 
@@ -373,6 +433,23 @@ pub fn flatten_changes(node: &DiffNode) -> Vec<DiffNode> {
     let mut changes = Vec::new();
     collect_changes(node, &mut changes);
     changes
+}
+
+pub fn summarize_changes(changes: &[DiffNode]) -> DiffSummary {
+    let mut summary = DiffSummary::default();
+
+    for change in changes {
+        match change.status {
+            DiffStatus::Unchanged => {}
+            DiffStatus::Modified => summary.modified += 1,
+            DiffStatus::Added => summary.added += 1,
+            DiffStatus::Removed => summary.removed += 1,
+            DiffStatus::Reordered => summary.reordered += 1,
+            DiffStatus::Error => summary.error += 1,
+        }
+    }
+
+    summary
 }
 
 fn collect_changes(node: &DiffNode, changes: &mut Vec<DiffNode>) {
@@ -607,13 +684,17 @@ mod tests {
             .unwrap_or_else(|| panic!("missing diff child for Lines: {diff:#?}"));
 
         assert!(
-            lines.children.iter().any(|node| node.status == DiffStatus::Reordered),
+            lines
+                .children
+                .iter()
+                .any(|node| node.status == DiffStatus::Reordered),
             "expected a reorder node in Lines diff: {lines:#?}"
         );
         assert!(
-            lines.children.iter().any(|node| {
-                node.path.contains("M375") && node.status == DiffStatus::Modified
-            }),
+            lines
+                .children
+                .iter()
+                .any(|node| { node.path.contains("M375") && node.status == DiffStatus::Modified }),
             "expected modified keyed line diff for M375: {lines:#?}"
         );
     }
@@ -663,7 +744,7 @@ mod tests {
             group_items
                 .children
                 .iter()
-            .any(|node| node.status == DiffStatus::Error),
+                .any(|node| node.status == DiffStatus::Error),
             "expected error node for ambiguous business key: {group_items:#?}"
         );
     }
@@ -739,7 +820,10 @@ mod tests {
             "expected valid keyed line to still compare by key: {lines:#?}"
         );
         assert!(
-            lines.children.iter().all(|node| !node.path.contains("Lines[0]")),
+            lines
+                .children
+                .iter()
+                .all(|node| !node.path.contains("Lines[0]")),
             "unexpected positional fallback in keyed array: {lines:#?}"
         );
     }
@@ -765,7 +849,9 @@ mod tests {
             "flattened changes should not retain child subtrees: {changes:#?}"
         );
         assert!(
-            changes.iter().any(|node| node.path == "Lines[M375|Downtown].PriceDescription"),
+            changes
+                .iter()
+                .any(|node| node.path == "Lines[M375|Downtown].PriceDescription"),
             "expected leaf change in flattened list: {changes:#?}"
         );
     }
@@ -792,9 +878,10 @@ mod tests {
             .unwrap_or_else(|| panic!("missing diff child for GroupItems: {diff:#?}"));
 
         assert!(
-            group_items.children.iter().any(|node| {
-                node.status == DiffStatus::Error && node.summary.contains('①')
-            }),
+            group_items
+                .children
+                .iter()
+                .any(|node| { node.status == DiffStatus::Error && node.summary.contains('①') }),
             "expected ambiguity error node for duplicate key: {group_items:#?}"
         );
         assert!(
