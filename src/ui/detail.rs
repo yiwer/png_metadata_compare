@@ -1,6 +1,8 @@
 use crate::app::{BatchSelection, CompareResultView};
 use crate::batch_report::{BatchCompareReport, MatchStrategy, UnmatchedFile};
 use crate::diff::{DiffNode, DiffStatus};
+use crate::ui::summary::batch_issue_lines;
+use std::path::Path;
 
 pub fn find_node_by_path<'a>(node: &'a DiffNode, path: &str) -> Option<&'a DiffNode> {
     if node.path == path {
@@ -47,19 +49,26 @@ pub fn draw_batch_detail(
     report: Option<&BatchCompareReport>,
     selection: Option<BatchSelection>,
 ) {
+    for line in batch_detail_panel_lines(report, selection) {
+        ui.label(line);
+    }
+}
+
+pub(crate) fn batch_detail_panel_lines(
+    report: Option<&BatchCompareReport>,
+    selection: Option<BatchSelection>,
+) -> Vec<String> {
     let Some(report) = report else {
-        ui.label("Run directory compare to inspect batch details.");
-        return;
+        return vec!["Run directory compare to inspect batch details.".to_string()];
     };
 
     let Some(selection) = selection else {
-        ui.label("Select a batch item to inspect details.");
-        return;
+        let mut lines = batch_issue_lines(&report.issues);
+        lines.push("Select a batch item to inspect details.".to_string());
+        return lines;
     };
 
-    for line in batch_detail_lines(report, Some(selection)) {
-        ui.label(line);
-    }
+    batch_detail_lines(report, Some(selection))
 }
 
 pub(crate) fn batch_detail_lines(
@@ -77,18 +86,18 @@ pub(crate) fn batch_detail_lines(
             };
             vec![
                 format!("File: {}", identical.pair.file_name),
-                "Status: identical".to_string(),
+                "Status: Identical".to_string(),
                 format!(
                     "Match strategy: {}",
                     match_strategy_label(&identical.pair.match_strategy)
                 ),
                 format!(
                     "Left: {}",
-                    identical.pair.left.relative_path.to_string_lossy()
+                    normalized_path_text(&identical.pair.left.relative_path)
                 ),
                 format!(
                     "Right: {}",
-                    identical.pair.right.relative_path.to_string_lossy()
+                    normalized_path_text(&identical.pair.right.relative_path)
                 ),
             ]
         }
@@ -98,7 +107,7 @@ pub(crate) fn batch_detail_lines(
             };
             vec![
                 format!("File: {}", different.pair.file_name),
-                "Status: different".to_string(),
+                "Status: Different".to_string(),
                 format!("Total changes: {}", different.summary.total()),
                 format!("Modified: {}", different.summary.modified),
                 format!("Added: {}", different.summary.added),
@@ -111,13 +120,13 @@ pub(crate) fn batch_detail_lines(
             let Some(unmatched) = report.left_only.get(index) else {
                 return vec!["The selected batch item is no longer available.".to_string()];
             };
-            unmatched_detail_lines(unmatched, "left only")
+            unmatched_detail_lines(unmatched, "Left Only")
         }
         BatchSelection::RightOnly(index) => {
             let Some(unmatched) = report.right_only.get(index) else {
                 return vec!["The selected batch item is no longer available.".to_string()];
             };
-            unmatched_detail_lines(unmatched, "right only")
+            unmatched_detail_lines(unmatched, "Right Only")
         }
     }
 }
@@ -172,10 +181,14 @@ fn unmatched_detail_lines(unmatched: &UnmatchedFile, status: &str) -> Vec<String
         format!("Status: {status}"),
         format!(
             "Relative path: {}",
-            unmatched.file.relative_path.to_string_lossy()
+            normalized_path_text(&unmatched.file.relative_path)
         ),
         format!("Reason: {}", unmatched.reason),
     ]
+}
+
+fn normalized_path_text(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
 fn match_strategy_label(strategy: &MatchStrategy) -> &'static str {
@@ -187,12 +200,91 @@ fn match_strategy_label(strategy: &MatchStrategy) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{batch_detail_lines, detail_context_text, detail_value_text};
+    use super::{
+        batch_detail_lines, batch_detail_panel_lines, detail_context_text, detail_value_text,
+    };
     use crate::app::BatchSelection;
-    use crate::batch_report::{BatchCompareReport, UnmatchedFile, UnmatchedSide};
+    use crate::batch_report::{
+        BatchCompareReport, BatchIssue, DifferentPairResult, IdenticalPairResult, MatchStrategy,
+        MatchedPair, UnmatchedFile, UnmatchedSide,
+    };
     use crate::batch_scan::BatchFileRecord;
-    use crate::diff::{DiffNode, DiffStatus};
+    use crate::diff::{DiffNode, DiffStatus, DiffSummary};
     use std::path::PathBuf;
+
+    fn record(relative: &str) -> BatchFileRecord {
+        let relative_path = PathBuf::from(relative);
+        let file_name = relative_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("test path should include a UTF-8 file name")
+            .to_string();
+        let parent_dir_name = relative_path
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .map(|name| name.to_string_lossy().to_string());
+
+        BatchFileRecord {
+            absolute_path: PathBuf::from("C:/batch").join(relative),
+            relative_path,
+            file_name,
+            parent_dir_name,
+        }
+    }
+
+    fn matched_pair(file_name: &str, left: &str, right: &str) -> MatchedPair {
+        MatchedPair {
+            file_name: file_name.to_string(),
+            left: record(left),
+            right: record(right),
+            match_strategy: MatchStrategy::FileNameAndParentDir,
+        }
+    }
+
+    fn sample_report() -> BatchCompareReport {
+        BatchCompareReport {
+            issues: vec![BatchIssue::ScanFailure {
+                side: UnmatchedSide::Right,
+                path: PathBuf::from("C:/batch/right"),
+                reason: "permission denied".to_string(),
+            }],
+            identical: vec![IdenticalPairResult {
+                pair: matched_pair("same.png", "left/routes/same.png", "right/routes/same.png"),
+            }],
+            different: vec![DifferentPairResult {
+                pair: matched_pair(
+                    "changed.png",
+                    "left/routes/changed.png",
+                    "right/routes/changed.png",
+                ),
+                diff_root: DiffNode {
+                    path: "StopPlateMetadata".into(),
+                    status: DiffStatus::Modified,
+                    left_value: None,
+                    right_value: None,
+                    summary: "root modified".into(),
+                    children: Vec::new(),
+                },
+                change_list: Vec::new(),
+                summary: DiffSummary {
+                    modified: 2,
+                    added: 1,
+                    ..DiffSummary::default()
+                },
+                selected_path: None,
+            }],
+            left_only: vec![UnmatchedFile {
+                side: UnmatchedSide::Left,
+                file: record("left/left-only.png"),
+                reason: "no file named 'left-only.png' found on right side".to_string(),
+            }],
+            right_only: vec![UnmatchedFile {
+                side: UnmatchedSide::Right,
+                file: record("right/right-only.png"),
+                reason: "no file named 'right-only.png' found on left side".to_string(),
+            }],
+        }
+    }
 
     #[test]
     fn detail_value_text_marks_container_nodes_without_direct_snapshot() {
@@ -272,10 +364,77 @@ mod tests {
             batch_detail_lines(&report, Some(BatchSelection::LeftOnly(0))),
             vec![
                 "File: left-only.png".to_string(),
-                "Status: left only".to_string(),
+                "Status: Left Only".to_string(),
                 "Relative path: left-only.png".to_string(),
                 "Reason: no file named 'left-only.png' found on right side".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn batch_detail_panel_lines_prompt_before_report_exists() {
+        assert_eq!(
+            batch_detail_panel_lines(None, None),
+            vec!["Run directory compare to inspect batch details.".to_string()]
+        );
+    }
+
+    #[test]
+    fn batch_detail_panel_lines_show_issues_when_no_item_is_selected() {
+        let report = sample_report();
+
+        assert_eq!(
+            batch_detail_panel_lines(Some(&report), None),
+            vec![
+                "Issues (1)".to_string(),
+                "Right scan failure [C:/batch/right] :: permission denied".to_string(),
+                "Select a batch item to inspect details.".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn batch_detail_panel_lines_describe_identical_selection() {
+        let report = sample_report();
+
+        assert_eq!(
+            batch_detail_panel_lines(Some(&report), Some(BatchSelection::Identical(0))),
+            vec![
+                "File: same.png".to_string(),
+                "Status: Identical".to_string(),
+                "Match strategy: file name + parent directory".to_string(),
+                "Left: left/routes/same.png".to_string(),
+                "Right: right/routes/same.png".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn batch_detail_panel_lines_describe_different_selection() {
+        let report = sample_report();
+
+        assert_eq!(
+            batch_detail_panel_lines(Some(&report), Some(BatchSelection::Different(0))),
+            vec![
+                "File: changed.png".to_string(),
+                "Status: Different".to_string(),
+                "Total changes: 3".to_string(),
+                "Modified: 2".to_string(),
+                "Added: 1".to_string(),
+                "Removed: 0".to_string(),
+                "Reordered: 0".to_string(),
+                "Errors: 0".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn batch_detail_panel_lines_fall_back_when_selection_is_stale() {
+        let report = sample_report();
+
+        assert_eq!(
+            batch_detail_panel_lines(Some(&report), Some(BatchSelection::Different(99))),
+            vec!["The selected batch item is no longer available.".to_string()]
         );
     }
 }
