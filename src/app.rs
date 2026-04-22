@@ -69,9 +69,57 @@ impl PngMetadataCompareApp {
         }
     }
 
+    fn can_swap_active_inputs(&self) -> bool {
+        match self.mode {
+            AppMode::SingleFile => self.left_path.is_some() || self.right_path.is_some(),
+            AppMode::Directory => self.left_dir.is_some() || self.right_dir.is_some(),
+        }
+    }
+
+    fn clear_outputs(&mut self) {
+        self.result = None;
+        self.batch_report = None;
+        self.batch_selection = None;
+    }
+
+    fn set_left_file_path(&mut self, path: String) {
+        self.left_path = Some(path);
+        self.clear_outputs();
+    }
+
+    fn set_right_file_path(&mut self, path: String) {
+        self.right_path = Some(path);
+        self.clear_outputs();
+    }
+
+    fn set_left_dir_path(&mut self, path: String) {
+        self.left_dir = Some(path);
+        self.clear_outputs();
+    }
+
+    fn set_right_dir_path(&mut self, path: String) {
+        self.right_dir = Some(path);
+        self.clear_outputs();
+    }
+
+    fn swap_active_inputs(&mut self) {
+        match self.mode {
+            AppMode::SingleFile => std::mem::swap(&mut self.left_path, &mut self.right_path),
+            AppMode::Directory => std::mem::swap(&mut self.left_dir, &mut self.right_dir),
+        }
+        self.clear_outputs();
+    }
+
     fn reconcile_tree_selection(&mut self) {
         if let Some(result) = self.result.as_mut() {
             tree::reconcile_selected_path(result, &self.filters);
+        }
+    }
+
+    fn run_active_compare(&mut self) {
+        match self.mode {
+            AppMode::SingleFile => self.run_compare(),
+            AppMode::Directory => self.run_directory_compare(),
         }
     }
 
@@ -79,24 +127,20 @@ impl PngMetadataCompareApp {
         let (Some(left_path), Some(right_path)) =
             (self.left_path.as_deref(), self.right_path.as_deref())
         else {
-            self.result = None;
-            self.batch_report = None;
-            self.batch_selection = None;
+            self.clear_outputs();
             return;
         };
 
-        self.result = Some(compare_paths(Path::new(left_path), Path::new(right_path)));
-        self.batch_report = None;
-        self.batch_selection = None;
+        let result = compare_paths(Path::new(left_path), Path::new(right_path));
+        self.clear_outputs();
+        self.result = Some(result);
     }
 
     pub fn run_directory_compare(&mut self) {
         let (Some(left_dir), Some(right_dir)) =
             (self.left_dir.as_deref(), self.right_dir.as_deref())
         else {
-            self.result = None;
-            self.batch_report = None;
-            self.batch_selection = None;
+            self.clear_outputs();
             return;
         };
 
@@ -104,6 +148,12 @@ impl PngMetadataCompareApp {
         let left_files = scan_directory_side(Path::new(left_dir), UnmatchedSide::Left, &mut issues);
         let right_files =
             scan_directory_side(Path::new(right_dir), UnmatchedSide::Right, &mut issues);
+        if !issues.is_empty() {
+            let batch_report = build_batch_results(Vec::new(), Vec::new(), Vec::new(), issues);
+            self.clear_outputs();
+            self.batch_report = Some(batch_report);
+            return;
+        }
         let pairing = build_pairing(&left_files, &right_files);
         let matched_results = pairing
             .matched
@@ -122,7 +172,7 @@ impl PngMetadataCompareApp {
             different.selected_path = default_selected_path(&different.change_list);
         }
 
-        self.result = None;
+        self.clear_outputs();
         self.batch_selection = default_batch_selection(&batch_report);
         self.batch_report = Some(batch_report);
     }
@@ -139,8 +189,7 @@ impl PngMetadataCompareApp {
                         .add_filter("PNG image", &["png"])
                         .pick_file()
                     {
-                        self.left_path = Some(path.display().to_string());
-                        self.result = None;
+                        self.set_left_file_path(path.display().to_string());
                     }
                 }
                 ui.label(
@@ -154,8 +203,7 @@ impl PngMetadataCompareApp {
                         .add_filter("PNG image", &["png"])
                         .pick_file()
                     {
-                        self.right_path = Some(path.display().to_string());
-                        self.result = None;
+                        self.set_right_file_path(path.display().to_string());
                     }
                 }
                 ui.label(
@@ -168,18 +216,17 @@ impl PngMetadataCompareApp {
                     .add_enabled(self.can_compare(), eframe::egui::Button::new("Compare"))
                     .clicked()
                 {
-                    self.run_compare();
+                    self.run_active_compare();
                 }
 
                 if ui
                     .add_enabled(
-                        self.left_path.is_some() || self.right_path.is_some(),
+                        self.can_swap_active_inputs(),
                         eframe::egui::Button::new("Swap"),
                     )
                     .clicked()
                 {
-                    std::mem::swap(&mut self.left_path, &mut self.right_path);
-                    self.result = None;
+                    self.swap_active_inputs();
                 }
             });
         });
@@ -634,11 +681,35 @@ mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use super::PngMetadataCompareApp;
     use super::test_support::BatchDirFixture;
+    use super::{CompareResultView, PngMetadataCompareApp};
+    use crate::batch_report::BatchCompareReport;
     use crate::batch_report::UnmatchedSide;
     use crate::diff::{DiffNode, DiffStatus};
     use crate::ui::tree::TreeFilters;
+
+    fn sample_result_view() -> CompareResultView {
+        CompareResultView {
+            root: DiffNode {
+                path: "StopPlateMetadata".into(),
+                status: DiffStatus::Modified,
+                left_value: None,
+                right_value: None,
+                summary: "root modified".into(),
+                children: Vec::new(),
+            },
+            change_list: vec![DiffNode {
+                path: "Title".into(),
+                status: DiffStatus::Modified,
+                left_value: Some("\"left\"".into()),
+                right_value: Some("\"right\"".into()),
+                summary: "Title modified".into(),
+                children: Vec::new(),
+            }],
+            summary: Default::default(),
+            selected_path: Some("Title".into()),
+        }
+    }
 
     #[test]
     fn compare_is_disabled_until_both_paths_are_present() {
@@ -779,6 +850,165 @@ mod tests {
         assert!(report.left_only.is_empty());
         assert!(report.right_only.is_empty());
         assert_eq!(app.batch_selection, None);
+    }
+
+    #[test]
+    fn directory_mode_scan_failure_does_not_mark_successful_side_files_as_unmatched() {
+        use crate::batch_report::BatchIssue;
+        use std::fs;
+
+        let fixture = BatchDirFixture::new("scan_failure_with_pngs");
+        fixture.write_left_png("left-only.png", r#"{"Title":"Left only"}"#);
+        let invalid_right_path = fixture.right_dir().join("not-a-directory.png");
+        fs::write(&invalid_right_path, b"test").expect("invalid scan target file should exist");
+
+        let mut app = PngMetadataCompareApp {
+            left_dir: Some(fixture.left_dir().display().to_string()),
+            right_dir: Some(invalid_right_path.display().to_string()),
+            mode: super::AppMode::Directory,
+            ..Default::default()
+        };
+
+        app.run_directory_compare();
+
+        let report = app
+            .batch_report
+            .as_ref()
+            .expect("directory compare should still produce a batch report on scan failure");
+        assert_eq!(report.issues.len(), 1);
+        match &report.issues[0] {
+            BatchIssue::ScanFailure { side, path, reason } => {
+                assert_eq!(*side, UnmatchedSide::Right);
+                assert_eq!(path, &invalid_right_path);
+                assert!(!reason.is_empty());
+            }
+        }
+        assert!(report.identical.is_empty());
+        assert!(report.different.is_empty());
+        assert!(
+            report.left_only.is_empty(),
+            "scan failures should suppress left-only classification when the other side scanned successfully: {report:#?}"
+        );
+        assert!(
+            report.right_only.is_empty(),
+            "scan failures should suppress right-only classification when the other side scanned successfully: {report:#?}"
+        );
+        assert_eq!(app.batch_selection, None);
+    }
+
+    #[test]
+    fn run_active_compare_uses_current_mode_inputs() {
+        let fixture = BatchDirFixture::new("active_compare_mode");
+        fixture.write_left_png("single-left.png", r#"{"Title":"Left"}"#);
+        fixture.write_right_png("single-right.png", r#"{"Title":"Right"}"#);
+        fixture.write_left_png("shared.png", r#"{"Title":"Same"}"#);
+        fixture.write_right_png("shared.png", r#"{"Title":"Same"}"#);
+
+        let left_file = fixture.left_dir().join("single-left.png");
+        let right_file = fixture.right_dir().join("single-right.png");
+
+        let mut app = PngMetadataCompareApp {
+            left_path: Some(left_file.display().to_string()),
+            right_path: Some(right_file.display().to_string()),
+            left_dir: Some(fixture.left_dir().display().to_string()),
+            right_dir: Some(fixture.right_dir().display().to_string()),
+            ..Default::default()
+        };
+
+        app.run_active_compare();
+
+        assert!(app.result.is_some());
+        assert!(app.batch_report.is_none());
+        assert!(app.batch_selection.is_none());
+
+        app.mode = super::AppMode::Directory;
+        app.run_active_compare();
+
+        let report = app
+            .batch_report
+            .as_ref()
+            .expect("directory mode compare should store batch report");
+        assert!(app.result.is_none());
+        assert_eq!(report.identical.len(), 1);
+        assert_eq!(report.identical[0].pair.file_name, "shared.png");
+    }
+
+    #[test]
+    fn input_changes_clear_stale_cross_mode_state() {
+        let mut app = PngMetadataCompareApp {
+            result: Some(sample_result_view()),
+            batch_report: Some(BatchCompareReport::default()),
+            batch_selection: Some(super::BatchSelection::LeftOnly(0)),
+            ..Default::default()
+        };
+
+        app.set_left_file_path("left.png".into());
+
+        assert_eq!(app.left_path.as_deref(), Some("left.png"));
+        assert!(app.result.is_none());
+        assert!(app.batch_report.is_none());
+        assert!(app.batch_selection.is_none());
+
+        app.result = Some(sample_result_view());
+        app.batch_report = Some(BatchCompareReport::default());
+        app.batch_selection = Some(super::BatchSelection::RightOnly(0));
+
+        app.set_right_dir_path("right-dir".into());
+
+        assert_eq!(app.right_dir.as_deref(), Some("right-dir"));
+        assert!(app.result.is_none());
+        assert!(app.batch_report.is_none());
+        assert!(app.batch_selection.is_none());
+
+        app.result = Some(sample_result_view());
+        app.batch_report = Some(BatchCompareReport::default());
+        app.batch_selection = Some(super::BatchSelection::LeftOnly(0));
+
+        app.set_left_dir_path("left-dir".into());
+
+        assert_eq!(app.left_dir.as_deref(), Some("left-dir"));
+        assert!(app.result.is_none());
+        assert!(app.batch_report.is_none());
+        assert!(app.batch_selection.is_none());
+    }
+
+    #[test]
+    fn swap_active_inputs_respects_mode_and_clears_state() {
+        let mut app = PngMetadataCompareApp {
+            left_path: Some("left.png".into()),
+            right_path: Some("right.png".into()),
+            left_dir: Some("left-dir".into()),
+            right_dir: Some("right-dir".into()),
+            result: Some(sample_result_view()),
+            batch_report: Some(BatchCompareReport::default()),
+            batch_selection: Some(super::BatchSelection::LeftOnly(0)),
+            ..Default::default()
+        };
+
+        app.swap_active_inputs();
+
+        assert_eq!(app.left_path.as_deref(), Some("right.png"));
+        assert_eq!(app.right_path.as_deref(), Some("left.png"));
+        assert_eq!(app.left_dir.as_deref(), Some("left-dir"));
+        assert_eq!(app.right_dir.as_deref(), Some("right-dir"));
+        assert!(app.result.is_none());
+        assert!(app.batch_report.is_none());
+        assert!(app.batch_selection.is_none());
+
+        app.mode = super::AppMode::Directory;
+        app.result = Some(sample_result_view());
+        app.batch_report = Some(BatchCompareReport::default());
+        app.batch_selection = Some(super::BatchSelection::RightOnly(0));
+
+        app.swap_active_inputs();
+
+        assert_eq!(app.left_path.as_deref(), Some("right.png"));
+        assert_eq!(app.right_path.as_deref(), Some("left.png"));
+        assert_eq!(app.left_dir.as_deref(), Some("right-dir"));
+        assert_eq!(app.right_dir.as_deref(), Some("left-dir"));
+        assert!(app.result.is_none());
+        assert!(app.batch_report.is_none());
+        assert!(app.batch_selection.is_none());
     }
 
     #[test]
