@@ -108,6 +108,14 @@ pub(crate) fn batch_detail_lines(
             vec![
                 format!("File: {}", different.pair.file_name),
                 "Status: Different".to_string(),
+                format!(
+                    "Left: {}",
+                    normalized_path_text(&different.pair.left.relative_path)
+                ),
+                format!(
+                    "Right: {}",
+                    normalized_path_text(&different.pair.right.relative_path)
+                ),
                 format!("Total changes: {}", different.summary.total()),
                 format!("Modified: {}", different.summary.modified),
                 format!("Added: {}", different.summary.added),
@@ -418,6 +426,8 @@ mod tests {
             vec![
                 "File: changed.png".to_string(),
                 "Status: Different".to_string(),
+                "Left: left/routes/changed.png".to_string(),
+                "Right: right/routes/changed.png".to_string(),
                 "Total changes: 3".to_string(),
                 "Modified: 2".to_string(),
                 "Added: 1".to_string(),
