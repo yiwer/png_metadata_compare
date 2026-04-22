@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use crate::error::CompareError;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+// Staged API for upcoming batch-compare wiring in later tasks.
+#[allow(dead_code)]
 pub struct BatchFileRecord {
     pub absolute_path: PathBuf,
     pub relative_path: PathBuf,
@@ -11,6 +13,8 @@ pub struct BatchFileRecord {
     pub parent_dir_name: Option<String>,
 }
 
+// Staged API for upcoming batch-compare wiring in later tasks.
+#[allow(dead_code)]
 pub fn scan_png_files(root: &Path) -> Result<Vec<BatchFileRecord>, CompareError> {
     let root_absolute = if root.is_absolute() {
         root.to_path_buf()
@@ -170,6 +174,10 @@ mod tests {
 
         let records = scan_png_files(fixture.path()).expect("scan should succeed");
         assert_eq!(records.len(), 1);
+        assert_eq!(
+            records[0].absolute_path,
+            fixture.path().join("a").join("b").join("c").join("image.png")
+        );
         assert_eq!(records[0].file_name, "image.png");
         assert_eq!(records[0].parent_dir_name.as_deref(), Some("c"));
     }
