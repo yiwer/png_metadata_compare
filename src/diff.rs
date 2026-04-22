@@ -55,16 +55,50 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
 
             aggregate_node(path, children)
         }
+        (None, Some(Value::Object(right_map))) => {
+            let children = right_map
+                .iter()
+                .map(|(key, value)| compare_values(&join_path(path, key), None, Some(value)))
+                .collect();
+
+            aggregate_node(path, children)
+        }
+        (Some(Value::Object(left_map)), None) => {
+            let children = left_map
+                .iter()
+                .map(|(key, value)| compare_values(&join_path(path, key), Some(value), None))
+                .collect();
+
+            aggregate_node(path, children)
+        }
         (Some(Value::Array(left_items)), Some(Value::Array(right_items))) => {
             let max_len = left_items.len().max(right_items.len());
             let children = (0..max_len)
                 .map(|index| {
                     compare_values(
-                        &join_path(path, &index.to_string()),
+                        &join_index_path(path, index),
                         left_items.get(index),
                         right_items.get(index),
                     )
                 })
+                .collect();
+
+            aggregate_node(path, children)
+        }
+        (None, Some(Value::Array(right_items))) => {
+            let children = right_items
+                .iter()
+                .enumerate()
+                .map(|(index, value)| compare_values(&join_index_path(path, index), None, Some(value)))
+                .collect();
+
+            aggregate_node(path, children)
+        }
+        (Some(Value::Array(left_items)), None) => {
+            let children = left_items
+                .iter()
+                .enumerate()
+                .map(|(index, value)| compare_values(&join_index_path(path, index), Some(value), None))
                 .collect();
 
             aggregate_node(path, children)
@@ -145,6 +179,14 @@ fn join_path(parent: &str, segment: &str) -> String {
     }
 }
 
+fn join_index_path(parent: &str, index: usize) -> String {
+    if parent.is_empty() {
+        format!("StopPlateMetadata[{index}]")
+    } else {
+        format!("{parent}[{index}]")
+    }
+}
+
 fn compact_json(value: Option<&Value>) -> Option<String> {
     value.and_then(|value| serde_json::to_string(value).ok())
 }
@@ -205,6 +247,76 @@ mod tests {
         assert_eq!(child.status, DiffStatus::Added);
         assert_eq!(child.left_value, None);
         assert_eq!(child.right_value.as_deref(), Some("7"));
+    }
+
+    #[test]
+    fn keeps_added_compound_values_explorable() {
+        let left = MetadataLoadResult::Parsed(json!({}));
+        let right = MetadataLoadResult::Parsed(json!({
+            "items": [
+                {"name": "alpha"}
+            ]
+        }));
+
+        let diff = compare_metadata(&left, &right);
+        let items = diff
+            .children
+            .iter()
+            .find(|node| node.path == "items")
+            .unwrap_or_else(|| panic!("missing diff child for items: {diff:#?}"));
+
+        assert_eq!(items.status, DiffStatus::Modified);
+        assert!(items.left_value.is_none());
+        assert!(items.right_value.is_none());
+
+        let index_node = items
+            .children
+            .iter()
+            .find(|node| node.path == "items[0]")
+            .unwrap_or_else(|| panic!("missing diff child for items[0]: {items:#?}"));
+
+        assert_eq!(index_node.status, DiffStatus::Modified);
+
+        let leaf = index_node
+            .children
+            .iter()
+            .find(|node| node.path == "items[0].name")
+            .unwrap_or_else(|| panic!("missing diff child for items[0].name: {index_node:#?}"));
+
+        assert_eq!(leaf.status, DiffStatus::Added);
+        assert_eq!(leaf.left_value, None);
+        assert_eq!(leaf.right_value.as_deref(), Some("\"alpha\""));
+    }
+
+    #[test]
+    fn uses_bracketed_paths_for_array_indexes() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "items": ["left"]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "items": ["right"]
+        }));
+
+        let diff = compare_metadata(&left, &right);
+        let items = diff
+            .children
+            .iter()
+            .find(|node| node.path == "items")
+            .unwrap_or_else(|| panic!("missing diff child for items: {diff:#?}"));
+
+        let index_node = items
+            .children
+            .iter()
+            .find(|node| node.path == "items[0]")
+            .unwrap_or_else(|| panic!("missing diff child for items[0]: {items:#?}"));
+
+        assert_eq!(index_node.status, DiffStatus::Modified);
+        assert_eq!(index_node.left_value.as_deref(), Some("\"left\""));
+        assert_eq!(index_node.right_value.as_deref(), Some("\"right\""));
+        assert!(
+            items.children.iter().all(|node| node.path != "items.0"),
+            "unexpected dotted array index path in children: {items:#?}"
+        );
     }
 
     #[test]
