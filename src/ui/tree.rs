@@ -28,6 +28,19 @@ pub fn should_show(node: &DiffNode, filters: &TreeFilters) -> bool {
             .any(|child| should_show(child, filters))
 }
 
+pub(crate) fn reconcile_selected_path(result: &mut CompareResultView, filters: &TreeFilters) {
+    let selection_is_visible = result
+        .selected_path
+        .as_deref()
+        .is_some_and(|path| selected_path_is_visible(&result.root, path, filters));
+
+    if selection_is_visible {
+        return;
+    }
+
+    result.selected_path = first_visible_selection_path(&result.root, filters);
+}
+
 pub fn draw_tree(ui: &mut eframe::egui::Ui, result: &mut CompareResultView, filters: &TreeFilters) {
     if !should_show(&result.root, filters) {
         ui.label("No diff nodes match the current filters.");
@@ -59,7 +72,7 @@ fn draw_node(
     if has_visible_children {
         let response = eframe::egui::CollapsingHeader::new(label)
             .id_salt(&node.path)
-            .default_open(default_open(node))
+            .default_open(should_default_open(node, filters))
             .show(ui, |ui| {
                 for child in &node.children {
                     draw_node(ui, child, selected_path, filters);
@@ -109,8 +122,67 @@ fn status_label(status: &DiffStatus) -> &'static str {
     }
 }
 
-fn default_open(node: &DiffNode) -> bool {
-    node.path.is_empty() || (!node.path.contains('.') && !node.path.contains('['))
+fn should_default_open(node: &DiffNode, filters: &TreeFilters) -> bool {
+    node.children
+        .iter()
+        .any(|child| contains_visible_difference(child, filters))
+}
+
+fn contains_visible_difference(node: &DiffNode, filters: &TreeFilters) -> bool {
+    directly_visible_difference(node, filters)
+        || node
+            .children
+            .iter()
+            .any(|child| contains_visible_difference(child, filters))
+}
+
+fn directly_visible_difference(node: &DiffNode, filters: &TreeFilters) -> bool {
+    node.status != DiffStatus::Unchanged && node_matches_filters(node, filters)
+}
+
+fn selected_path_is_visible(node: &DiffNode, path: &str, filters: &TreeFilters) -> bool {
+    if node.path == path {
+        return should_show(node, filters);
+    }
+
+    node.children
+        .iter()
+        .any(|child| selected_path_is_visible(child, path, filters))
+}
+
+fn first_visible_selection_path(node: &DiffNode, filters: &TreeFilters) -> Option<String> {
+    first_visible_snapshot_path(node, filters)
+        .or_else(|| first_directly_visible_path(node, filters))
+}
+
+fn first_visible_snapshot_path(node: &DiffNode, filters: &TreeFilters) -> Option<String> {
+    if node_matches_filters(node, filters)
+        && (node.left_value.is_some() || node.right_value.is_some())
+    {
+        return Some(node.path.clone());
+    }
+
+    for child in &node.children {
+        if let Some(path) = first_visible_snapshot_path(child, filters) {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+fn first_directly_visible_path(node: &DiffNode, filters: &TreeFilters) -> Option<String> {
+    if node_matches_filters(node, filters) {
+        return Some(node.path.clone());
+    }
+
+    for child in &node.children {
+        if let Some(path) = first_directly_visible_path(child, filters) {
+            return Some(path);
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]
@@ -120,7 +192,8 @@ pub(crate) fn hides_unchanged_nodes_when_only_differences_is_enabled_test() {
 
 #[cfg(test)]
 mod tests {
-    use super::{TreeFilters, should_show};
+    use super::{TreeFilters, reconcile_selected_path, should_default_open, should_show};
+    use crate::app::CompareResultView;
     use crate::diff::{DiffNode, DiffStatus};
 
     #[test]
@@ -149,5 +222,62 @@ mod tests {
 
         assert!(!should_show(&unchanged, &filters));
         assert!(should_show(&modified, &filters));
+    }
+
+    #[test]
+    fn opens_nested_branches_when_they_contain_visible_differences() {
+        let filters = TreeFilters::default();
+        let branch = DiffNode {
+            path: "Lines[LineName=M375]".into(),
+            status: DiffStatus::Modified,
+            left_value: None,
+            right_value: None,
+            summary: "Line modified".into(),
+            children: vec![DiffNode {
+                path: "Lines[LineName=M375].PriceDescription".into(),
+                status: DiffStatus::Modified,
+                left_value: Some("\"2\"".into()),
+                right_value: Some("\"3\"".into()),
+                summary: "PriceDescription modified".into(),
+                children: Vec::new(),
+            }],
+        };
+
+        assert!(should_default_open(&branch, &filters));
+    }
+
+    #[test]
+    fn moves_selection_to_visible_aggregate_when_leaf_selection_is_hidden() {
+        let filters = TreeFilters {
+            only_differences: false,
+            show_reordered: false,
+            show_unchanged: false,
+            show_errors: false,
+        };
+        let root = DiffNode {
+            path: "StopPlateMetadata".into(),
+            status: DiffStatus::Modified,
+            left_value: None,
+            right_value: None,
+            summary: "root modified".into(),
+            children: vec![DiffNode {
+                path: "Lines[0]".into(),
+                status: DiffStatus::Reordered,
+                left_value: Some("0".into()),
+                right_value: Some("1".into()),
+                summary: "row moved".into(),
+                children: Vec::new(),
+            }],
+        };
+        let mut result = CompareResultView {
+            root,
+            change_list: Vec::new(),
+            summary: Default::default(),
+            selected_path: Some("Lines[0]".into()),
+        };
+
+        reconcile_selected_path(&mut result, &filters);
+
+        assert_eq!(result.selected_path.as_deref(), Some("StopPlateMetadata"));
     }
 }

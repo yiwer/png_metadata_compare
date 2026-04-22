@@ -36,6 +36,12 @@ impl PngMetadataCompareApp {
         self.left_path.is_some() && self.right_path.is_some()
     }
 
+    fn reconcile_tree_selection(&mut self) {
+        if let Some(result) = self.result.as_mut() {
+            tree::reconcile_selected_path(result, &self.filters);
+        }
+    }
+
     pub fn run_compare(&mut self) {
         let (Some(left_path), Some(right_path)) =
             (self.left_path.as_deref(), self.right_path.as_deref())
@@ -62,6 +68,8 @@ impl PngMetadataCompareApp {
     }
 
     fn render_scaffold(&mut self, ctx: &eframe::egui::Context) {
+        self.reconcile_tree_selection();
+
         eframe::egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.heading("PNG Metadata Compare");
             ui.separator();
@@ -138,18 +146,36 @@ impl PngMetadataCompareApp {
         eframe::egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Diff Tree");
             ui.separator();
+            if self.result.is_none() {
+                ui.label("Run compare to populate the diff tree.");
+                return;
+            }
+
+            let mut filters_changed = false;
+            ui.horizontal_wrapped(|ui| {
+                filters_changed |= ui
+                    .checkbox(&mut self.filters.only_differences, "Only differences")
+                    .changed();
+                filters_changed |= ui
+                    .checkbox(&mut self.filters.show_reordered, "Show reordered")
+                    .changed();
+                filters_changed |= ui
+                    .checkbox(&mut self.filters.show_unchanged, "Show unchanged")
+                    .changed();
+                filters_changed |= ui
+                    .checkbox(&mut self.filters.show_errors, "Show errors")
+                    .changed();
+            });
+
+            if filters_changed {
+                self.reconcile_tree_selection();
+            }
+            ui.separator();
+
             let Some(result) = self.result.as_mut() else {
                 ui.label("Run compare to populate the diff tree.");
                 return;
             };
-
-            ui.horizontal_wrapped(|ui| {
-                ui.checkbox(&mut self.filters.only_differences, "Only differences");
-                ui.checkbox(&mut self.filters.show_reordered, "Show reordered");
-                ui.checkbox(&mut self.filters.show_unchanged, "Show unchanged");
-                ui.checkbox(&mut self.filters.show_errors, "Show errors");
-            });
-            ui.separator();
 
             if result.summary.total() == 0 {
                 ui.label("No differences found between the selected PNG metadata.");
@@ -350,6 +376,7 @@ fn run_compare_pipeline_builds_diff_and_counts_impl() {
 mod tests {
     use super::PngMetadataCompareApp;
     use crate::diff::{DiffNode, DiffStatus};
+    use crate::ui::tree::TreeFilters;
 
     #[test]
     fn compare_is_disabled_until_both_paths_are_present() {
@@ -409,5 +436,52 @@ mod tests {
     #[test]
     fn default_selected_path_is_none_when_no_changes_exist() {
         assert_eq!(super::default_selected_path(&[]), None);
+    }
+
+    #[test]
+    fn reconcile_tree_selection_moves_hidden_selection_to_visible_node() {
+        let mut app = PngMetadataCompareApp {
+            filters: TreeFilters::default(),
+            result: Some(super::CompareResultView {
+                root: DiffNode {
+                    path: "StopPlateMetadata".into(),
+                    status: DiffStatus::Modified,
+                    left_value: None,
+                    right_value: None,
+                    summary: "root modified".into(),
+                    children: vec![
+                        DiffNode {
+                            path: "Title".into(),
+                            status: DiffStatus::Unchanged,
+                            left_value: Some("\"same\"".into()),
+                            right_value: Some("\"same\"".into()),
+                            summary: "Title unchanged".into(),
+                            children: Vec::new(),
+                        },
+                        DiffNode {
+                            path: "LegacyCode".into(),
+                            status: DiffStatus::Modified,
+                            left_value: Some("\"A1\"".into()),
+                            right_value: Some("\"B2\"".into()),
+                            summary: "LegacyCode modified".into(),
+                            children: Vec::new(),
+                        },
+                    ],
+                },
+                change_list: Vec::new(),
+                summary: Default::default(),
+                selected_path: Some("Title".into()),
+            }),
+            ..Default::default()
+        };
+
+        app.reconcile_tree_selection();
+
+        assert_eq!(
+            app.result
+                .as_ref()
+                .and_then(|result| result.selected_path.as_deref()),
+            Some("LegacyCode")
+        );
     }
 }
