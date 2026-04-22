@@ -40,7 +40,7 @@ impl PngMetadataCompareApp {
         let root = compare_metadata(&left_metadata, &right_metadata);
         let change_list = flatten_changes(&root);
         let summary = summarize_changes(&change_list);
-        let selected_path = Some(root.path.clone());
+        let selected_path = default_selected_path(&change_list);
 
         self.result = Some(CompareResultView {
             root,
@@ -133,6 +133,14 @@ impl PngMetadataCompareApp {
             tree::draw_tree(ui);
         });
     }
+}
+
+fn default_selected_path(change_list: &[DiffNode]) -> Option<String> {
+    change_list
+        .iter()
+        .find(|node| node.left_value.is_some() || node.right_value.is_some())
+        .or_else(|| change_list.first())
+        .map(|node| node.path.clone())
 }
 
 impl eframe::App for PngMetadataCompareApp {
@@ -266,7 +274,20 @@ fn run_compare_pipeline_builds_diff_and_counts_impl() {
     let result = app.result.expect("compare result should be stored");
     assert_eq!(result.root.path, "StopPlateMetadata");
     assert_eq!(result.root.status, DiffStatus::Modified);
-    assert_eq!(result.selected_path.as_deref(), Some("StopPlateMetadata"));
+    assert_ne!(result.selected_path.as_deref(), Some("StopPlateMetadata"));
+    let selected_path = result
+        .selected_path
+        .as_deref()
+        .expect("compare result should select a changed node with a snapshot");
+    let selected_node = result
+        .change_list
+        .iter()
+        .find(|node| node.path == selected_path)
+        .unwrap_or_else(|| panic!("missing selected node in change list: {selected_path}"));
+    assert!(
+        selected_node.left_value.is_some() || selected_node.right_value.is_some(),
+        "selected node should expose at least one direct snapshot: {selected_node:#?}"
+    );
     assert_eq!(result.summary.modified, 5);
     assert_eq!(result.summary.added, 1);
     assert_eq!(result.summary.removed, 1);
@@ -302,6 +323,7 @@ fn run_compare_pipeline_builds_diff_and_counts_impl() {
 #[cfg(test)]
 mod tests {
     use super::PngMetadataCompareApp;
+    use crate::diff::{DiffNode, DiffStatus};
 
     #[test]
     fn compare_is_disabled_until_both_paths_are_present() {
@@ -329,5 +351,37 @@ mod tests {
     #[test]
     fn compare_pipeline_builds_diff_and_counts() {
         super::run_compare_pipeline_builds_diff_and_counts_impl();
+    }
+
+    #[test]
+    fn default_selected_path_skips_root_aggregate_when_leaf_change_exists() {
+        let changes = vec![
+            DiffNode {
+                path: "StopPlateMetadata".into(),
+                status: DiffStatus::Modified,
+                left_value: None,
+                right_value: None,
+                summary: "root modified".into(),
+                children: Vec::new(),
+            },
+            DiffNode {
+                path: "Title".into(),
+                status: DiffStatus::Modified,
+                left_value: Some("\"old\"".into()),
+                right_value: Some("\"new\"".into()),
+                summary: "Title modified".into(),
+                children: Vec::new(),
+            },
+        ];
+
+        assert_eq!(
+            super::default_selected_path(&changes).as_deref(),
+            Some("Title")
+        );
+    }
+
+    #[test]
+    fn default_selected_path_is_none_when_no_changes_exist() {
+        assert_eq!(super::default_selected_path(&[]), None);
     }
 }
