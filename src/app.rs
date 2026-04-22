@@ -1,4 +1,4 @@
-use crate::diff::{compare_metadata, flatten_changes, summarize_changes, DiffNode, DiffSummary};
+use crate::diff::{DiffNode, DiffSummary, compare_metadata, flatten_changes, summarize_changes};
 use crate::metadata::load_metadata;
 use crate::png_reader::extract_stop_plate_metadata_from_file;
 use crate::ui::{detail, summary, tree};
@@ -13,11 +13,22 @@ pub struct CompareResultView {
     pub selected_path: Option<String>,
 }
 
-#[derive(Default)]
 pub struct PngMetadataCompareApp {
     pub left_path: Option<String>,
     pub right_path: Option<String>,
     pub result: Option<CompareResultView>,
+    pub filters: tree::TreeFilters,
+}
+
+impl Default for PngMetadataCompareApp {
+    fn default() -> Self {
+        Self {
+            left_path: None,
+            right_path: None,
+            result: None,
+            filters: tree::TreeFilters::default(),
+        }
+    }
 }
 
 impl PngMetadataCompareApp {
@@ -127,10 +138,25 @@ impl PngMetadataCompareApp {
         eframe::egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Diff Tree");
             ui.separator();
-            if self.result.is_none() {
+            let Some(result) = self.result.as_mut() else {
                 ui.label("Run compare to populate the diff tree.");
+                return;
+            };
+
+            ui.horizontal_wrapped(|ui| {
+                ui.checkbox(&mut self.filters.only_differences, "Only differences");
+                ui.checkbox(&mut self.filters.show_reordered, "Show reordered");
+                ui.checkbox(&mut self.filters.show_unchanged, "Show unchanged");
+                ui.checkbox(&mut self.filters.show_errors, "Show errors");
+            });
+            ui.separator();
+
+            if result.summary.total() == 0 {
+                ui.label("No differences found between the selected PNG metadata.");
+                return;
             }
-            tree::draw_tree(ui);
+
+            tree::draw_tree(ui, result, &self.filters);
         });
     }
 }
