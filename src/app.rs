@@ -276,8 +276,6 @@ impl PngMetadataCompareApp {
     }
 
     fn render_scaffold(&mut self, ctx: &eframe::egui::Context) {
-        self.reconcile_tree_selection();
-
         eframe::egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.heading("PNG Metadata Compare");
             ui.separator();
@@ -394,6 +392,8 @@ impl PngMetadataCompareApp {
             }
         });
 
+        self.reconcile_tree_selection();
+
         eframe::egui::TopBottomPanel::bottom("detail_panel")
             .resizable(true)
             .show(ctx, |ui| {
@@ -464,11 +464,10 @@ impl PngMetadataCompareApp {
             return;
         }
 
-        if draw_tree_filter_controls(ui, &mut self.filters) {
-            self.reconcile_tree_selection();
-        }
+        let _ = draw_tree_filter_controls(ui, &mut self.filters);
         ui.separator();
         let filters = self.filters.clone();
+        self.reconcile_tree_selection();
 
         match self.mode {
             AppMode::SingleFile => {
@@ -1035,6 +1034,59 @@ mod tests {
         }
     }
 
+    fn sample_hidden_selection_result(
+        file_name: &str,
+        root_path: &str,
+        hidden_path: &str,
+        visible_path: &str,
+    ) -> DifferentPairResult {
+        DifferentPairResult {
+            pair: sample_pair(
+                file_name,
+                &format!("left/{file_name}"),
+                &format!("right/{file_name}"),
+            ),
+            diff_root: DiffNode {
+                path: root_path.into(),
+                status: DiffStatus::Modified,
+                left_value: None,
+                right_value: None,
+                summary: format!("{file_name} root modified"),
+                children: vec![
+                    DiffNode {
+                        path: hidden_path.into(),
+                        status: DiffStatus::Unchanged,
+                        left_value: Some("\"same\"".into()),
+                        right_value: Some("\"same\"".into()),
+                        summary: format!("{file_name} hidden leaf unchanged"),
+                        children: Vec::new(),
+                    },
+                    DiffNode {
+                        path: visible_path.into(),
+                        status: DiffStatus::Modified,
+                        left_value: Some("\"left\"".into()),
+                        right_value: Some("\"right\"".into()),
+                        summary: format!("{file_name} visible leaf modified"),
+                        children: Vec::new(),
+                    },
+                ],
+            },
+            change_list: vec![DiffNode {
+                path: visible_path.into(),
+                status: DiffStatus::Modified,
+                left_value: Some("\"left\"".into()),
+                right_value: Some("\"right\"".into()),
+                summary: format!("{file_name} visible leaf modified"),
+                children: Vec::new(),
+            }],
+            summary: DiffSummary {
+                modified: 1,
+                ..DiffSummary::default()
+            },
+            selected_path: Some(hidden_path.into()),
+        }
+    }
+
     #[test]
     fn compare_is_disabled_until_both_paths_are_present() {
         let mut app = PngMetadataCompareApp::default();
@@ -1117,6 +1169,92 @@ mod tests {
         assert_eq!(active.root().path, "SecondRoot");
         assert_eq!(active.selected_path(), Some("SecondRoot.NewField"));
         assert_eq!(active.summary().modified, 1);
+    }
+
+    #[test]
+    fn render_active_diff_tree_reconciles_current_mode_at_render_time() {
+        let mut report = BatchCompareReport::default();
+        report.different.push(sample_hidden_selection_result(
+            "batch.png",
+            "BatchRoot",
+            "BatchRoot.Hidden",
+            "BatchRoot.Visible",
+        ));
+
+        let mut app = PngMetadataCompareApp {
+            mode: super::AppMode::SingleFile,
+            result: Some(sample_result_view()),
+            batch_report: Some(report),
+            batch_selection: Some(super::BatchSelection::Different(0)),
+            ..Default::default()
+        };
+
+        app.reconcile_tree_selection();
+        app.mode = super::AppMode::Directory;
+
+        let ctx = eframe::egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            eframe::egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_active_diff_tree(
+                    ui,
+                    "Run directory compare to populate the diff tree.",
+                    "No differences found between the selected PNG metadata.",
+                );
+            });
+        });
+
+        assert_eq!(
+            app.batch_report
+                .as_ref()
+                .and_then(|report| report.different.first())
+                .and_then(|result| result.selected_path.as_deref()),
+            Some("BatchRoot.Visible")
+        );
+    }
+
+    #[test]
+    fn render_active_diff_tree_reconciles_current_batch_selection_at_render_time() {
+        let mut report = BatchCompareReport::default();
+        report.different.push(sample_different_result(
+            "first.png",
+            "FirstRoot",
+            "FirstRoot.Visible",
+        ));
+        report.different.push(sample_hidden_selection_result(
+            "second.png",
+            "SecondRoot",
+            "SecondRoot.Hidden",
+            "SecondRoot.Visible",
+        ));
+
+        let mut app = PngMetadataCompareApp {
+            mode: super::AppMode::Directory,
+            batch_report: Some(report),
+            batch_selection: Some(super::BatchSelection::Different(0)),
+            ..Default::default()
+        };
+
+        app.reconcile_tree_selection();
+        app.batch_selection = Some(super::BatchSelection::Different(1));
+
+        let ctx = eframe::egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            eframe::egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_active_diff_tree(
+                    ui,
+                    "Run directory compare to populate the diff tree.",
+                    "No differences found between the selected PNG metadata.",
+                );
+            });
+        });
+
+        assert_eq!(
+            app.batch_report
+                .as_ref()
+                .and_then(|report| report.different.get(1))
+                .and_then(|result| result.selected_path.as_deref()),
+            Some("SecondRoot.Visible")
+        );
     }
 
     #[test]
@@ -1218,6 +1356,58 @@ mod tests {
         assert_eq!(
             app.batch_selection,
             Some(super::BatchSelection::LeftOnly(0))
+        );
+    }
+
+    #[test]
+    fn default_batch_selection_prefers_different_then_identical_then_left_only_then_right_only() {
+        let mut report = BatchCompareReport::default();
+        report.different.push(sample_different_result(
+            "different.png",
+            "DifferentRoot",
+            "DifferentRoot.Visible",
+        ));
+        report.identical.push(
+            crate::batch_report::IdenticalPairResult {
+                pair: sample_pair(
+                    "identical.png",
+                    "left/identical.png",
+                    "right/identical.png",
+                ),
+            },
+        );
+        report.left_only.push(crate::batch_report::UnmatchedFile {
+            side: UnmatchedSide::Left,
+            file: sample_record("left/left-only.png"),
+            reason: "missing from right".into(),
+        });
+        report.right_only.push(crate::batch_report::UnmatchedFile {
+            side: UnmatchedSide::Right,
+            file: sample_record("right/right-only.png"),
+            reason: "missing from left".into(),
+        });
+
+        assert_eq!(
+            super::default_batch_selection(&report),
+            Some(super::BatchSelection::Different(0))
+        );
+
+        report.different.clear();
+        assert_eq!(
+            super::default_batch_selection(&report),
+            Some(super::BatchSelection::Identical(0))
+        );
+
+        report.identical.clear();
+        assert_eq!(
+            super::default_batch_selection(&report),
+            Some(super::BatchSelection::LeftOnly(0))
+        );
+
+        report.left_only.clear();
+        assert_eq!(
+            super::default_batch_selection(&report),
+            Some(super::BatchSelection::RightOnly(0))
         );
     }
 
