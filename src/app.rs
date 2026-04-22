@@ -146,8 +146,9 @@ impl PngMetadataCompareApp {
         eframe::egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Diff Tree");
             ui.separator();
-            if self.result.is_none() {
-                ui.label("Run compare to populate the diff tree.");
+            let state = central_panel_state(self.result.as_ref(), &self.filters);
+            if let Some(message) = state.empty_message {
+                ui.label(message);
                 return;
             }
 
@@ -177,13 +178,53 @@ impl PngMetadataCompareApp {
                 return;
             };
 
-            if result.summary.total() == 0 {
+            let state = central_panel_state(Some(&*result), &self.filters);
+            if state.show_no_differences_message {
                 ui.label("No differences found between the selected PNG metadata.");
-                return;
             }
 
-            tree::draw_tree(ui, result, &self.filters);
+            if state.show_tree && state.show_no_differences_message {
+                ui.separator();
+            }
+
+            if state.show_tree {
+                tree::draw_tree(ui, result, &self.filters);
+            }
         });
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CentralPanelState {
+    empty_message: Option<&'static str>,
+    show_no_differences_message: bool,
+    show_tree: bool,
+}
+
+fn central_panel_state(
+    result: Option<&CompareResultView>,
+    filters: &tree::TreeFilters,
+) -> CentralPanelState {
+    let Some(result) = result else {
+        return CentralPanelState {
+            empty_message: Some("Run compare to populate the diff tree."),
+            show_no_differences_message: false,
+            show_tree: false,
+        };
+    };
+
+    if result.summary.total() == 0 {
+        return CentralPanelState {
+            empty_message: None,
+            show_no_differences_message: true,
+            show_tree: tree::should_show(&result.root, filters),
+        };
+    }
+
+    CentralPanelState {
+        empty_message: None,
+        show_no_differences_message: false,
+        show_tree: true,
     }
 }
 
@@ -272,7 +313,7 @@ fn run_compare_pipeline_builds_diff_and_counts_impl() {
         bytes.extend_from_slice(&(data.len() as u32).to_be_bytes());
         bytes.extend_from_slice(&kind);
         bytes.extend_from_slice(&data);
-        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.extend_from_slice(&png_chunk_crc(kind, &data).to_be_bytes());
         bytes
     }
 
@@ -476,7 +517,7 @@ mod tests {
             bytes.extend_from_slice(&(data.len() as u32).to_be_bytes());
             bytes.extend_from_slice(&kind);
             bytes.extend_from_slice(&data);
-            bytes.extend_from_slice(&0u32.to_be_bytes());
+            bytes.extend_from_slice(&super::png_chunk_crc(kind, &data).to_be_bytes());
             bytes
         }
 
@@ -546,6 +587,40 @@ mod tests {
     }
 
     #[test]
+    fn central_panel_keeps_identical_tree_available_when_filters_show_unchanged() {
+        let result = super::CompareResultView {
+            root: DiffNode {
+                path: "StopPlateMetadata".into(),
+                status: DiffStatus::Unchanged,
+                left_value: Some("{\"Title\":\"Same\"}".into()),
+                right_value: Some("{\"Title\":\"Same\"}".into()),
+                summary: "metadata unchanged".into(),
+                children: vec![DiffNode {
+                    path: "Title".into(),
+                    status: DiffStatus::Unchanged,
+                    left_value: Some("\"Same\"".into()),
+                    right_value: Some("\"Same\"".into()),
+                    summary: "Title unchanged".into(),
+                    children: Vec::new(),
+                }],
+            },
+            change_list: Vec::new(),
+            summary: Default::default(),
+            selected_path: Some("Title".into()),
+        };
+        let filters = TreeFilters {
+            only_differences: false,
+            show_unchanged: true,
+            ..Default::default()
+        };
+
+        let state = super::central_panel_state(Some(&result), &filters);
+
+        assert!(state.show_no_differences_message);
+        assert!(state.show_tree);
+    }
+
+    #[test]
     fn reconcile_tree_selection_moves_hidden_selection_to_visible_node() {
         let mut app = PngMetadataCompareApp {
             filters: TreeFilters::default(),
@@ -591,4 +666,17 @@ mod tests {
             Some("LegacyCode")
         );
     }
+}
+
+#[cfg(test)]
+fn png_chunk_crc(kind: [u8; 4], data: &[u8]) -> u32 {
+    let mut crc = 0xffff_ffffu32;
+    for byte in kind.into_iter().chain(data.iter().copied()) {
+        crc ^= u32::from(byte);
+        for _ in 0..8 {
+            let mask = if crc & 1 == 1 { 0xedb8_8320 } else { 0 };
+            crc = (crc >> 1) ^ mask;
+        }
+    }
+    !crc
 }

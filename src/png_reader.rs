@@ -35,7 +35,11 @@ pub fn extract_stop_plate_metadata(bytes: &[u8]) -> Result<String, CompareError>
         let Some(crc_end) = offset.checked_add(4) else {
             return Err(CompareError::TruncatedChunk);
         };
-        if bytes.get(offset..crc_end).is_none() {
+        let Some(expected_crc_bytes) = bytes.get(offset..crc_end) else {
+            return Err(CompareError::TruncatedChunk);
+        };
+        let expected_crc = u32::from_be_bytes(expected_crc_bytes.try_into().expect("crc slice"));
+        if chunk_crc(chunk_type, chunk_data) != expected_crc {
             return Err(CompareError::TruncatedChunk);
         }
         offset = crc_end;
@@ -132,6 +136,22 @@ fn parse_stop_plate_itxt(data: &[u8]) -> Result<Option<String>, CompareError> {
     Ok(Some(text.to_owned()))
 }
 
+fn chunk_crc(chunk_type: &[u8], chunk_data: &[u8]) -> u32 {
+    let mut crc = 0xffff_ffffu32;
+    for byte in chunk_type
+        .iter()
+        .copied()
+        .chain(chunk_data.iter().copied())
+    {
+        crc ^= u32::from(byte);
+        for _ in 0..8 {
+            let mask = if crc & 1 == 1 { 0xedb8_8320 } else { 0 };
+            crc = (crc >> 1) ^ mask;
+        }
+    }
+    !crc
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,6 +242,17 @@ mod tests {
         assert!(matches!(error, CompareError::TruncatedChunk));
     }
 
+    #[test]
+    fn rejects_png_with_bad_crc_even_when_structure_and_metadata_are_valid() {
+        let mut png = png_with_chunks(vec![stop_plate_itxt(r#"{"plate":"ABC123"}"#)]);
+        corrupt_crc(&mut png, 0);
+
+        let error = extract_stop_plate_metadata(&png)
+            .expect_err("bad CRC should make the PNG malformed");
+
+        assert!(matches!(error, CompareError::TruncatedChunk));
+    }
+
     fn png_with_chunks(chunks: Vec<Vec<u8>>) -> Vec<u8> {
         let mut bytes = Vec::from(b"\x89PNG\r\n\x1a\n".as_slice());
         for chunk in chunks {
@@ -236,7 +267,7 @@ mod tests {
         bytes.extend_from_slice(&(data.len() as u32).to_be_bytes());
         bytes.extend_from_slice(&kind);
         bytes.extend_from_slice(&data);
-        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.extend_from_slice(&chunk_crc(&kind, &data).to_be_bytes());
         bytes
     }
 
@@ -250,5 +281,24 @@ mod tests {
         data.push(0);
         data.extend_from_slice(json.as_bytes());
         chunk(*b"iTXt", data)
+    }
+
+    fn corrupt_crc(png: &mut [u8], chunk_index: usize) {
+        let mut offset = PNG_SIGNATURE.len();
+        for index in 0..=chunk_index {
+            let length = u32::from_be_bytes(
+                png[offset..offset + 4]
+                    .try_into()
+                    .expect("chunk length should exist"),
+            ) as usize;
+            let crc_offset = offset + 8 + length;
+            if index == chunk_index {
+                png[crc_offset..crc_offset + 4].copy_from_slice(&1u32.to_be_bytes());
+                return;
+            }
+            offset = crc_offset + 4;
+        }
+
+        panic!("chunk index out of range: {chunk_index}");
     }
 }
