@@ -245,34 +245,39 @@ fn build_key_index<'a>(
 }
 
 fn business_key_for_path(path: &str) -> Option<BusinessKeyFn> {
-    if path.ends_with("GroupItems") {
-        Some(|value| value.get("SequenceNo")?.as_str().map(str::to_owned))
-    } else if path.ends_with("Lines") {
-        Some(|value| {
-            let line_name = value.get("LineName")?.as_str()?;
-            let direction = value
-                .get("Direction")
-                .and_then(|direction| direction.as_str());
-            match direction {
-                Some(direction) if !direction.is_empty() => {
-                    Some(format!("{line_name}|{direction}"))
+    match terminal_path_segment(path) {
+        "GroupItems" => Some(|value| value.get("SequenceNo")?.as_str().map(str::to_owned)),
+        "Lines" => {
+            Some(|value| {
+                let line_name = value.get("LineName")?.as_str()?;
+                let direction = value
+                    .get("Direction")
+                    .and_then(|direction| direction.as_str());
+                match direction {
+                    Some(direction) if !direction.is_empty() => {
+                        Some(format!("{line_name}|{direction}"))
+                    }
+                    _ => Some(line_name.to_owned()),
                 }
-                _ => Some(line_name.to_owned()),
-            }
-        })
-    } else if path.ends_with("RouteStops") {
-        Some(|value| {
-            let sequence = value.get("Sequence").and_then(|sequence| sequence.as_i64());
-            let name = value.get("Name").and_then(|name| name.as_str());
-            match (sequence, name) {
-                (Some(sequence), Some(name)) => Some(format!("{sequence}|{name}")),
-                (_, Some(name)) => Some(name.to_owned()),
-                _ => None,
-            }
-        })
-    } else {
-        None
+            })
+        }
+        "RouteStops" => {
+            Some(|value| {
+                let sequence = value.get("Sequence").and_then(|sequence| sequence.as_i64());
+                let name = value.get("Name").and_then(|name| name.as_str());
+                match (sequence, name) {
+                    (Some(sequence), Some(name)) => Some(format!("{sequence}|{name}")),
+                    (_, Some(name)) => Some(name.to_owned()),
+                    _ => None,
+                }
+            })
+        }
+        _ => None,
     }
+}
+
+fn terminal_path_segment(path: &str) -> &str {
+    path.rsplit('.').next().unwrap_or(path)
 }
 
 fn value_node(
@@ -696,6 +701,51 @@ mod tests {
                 .iter()
                 .any(|node| { node.path.contains("M375") && node.status == DiffStatus::Modified }),
             "expected modified keyed line diff for M375: {lines:#?}"
+        );
+    }
+
+    #[test]
+    fn compares_suffix_named_arrays_positionally_instead_of_as_keyed_business_arrays() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "HistoricalLines": [
+                {"LineName": "B932", "Direction": "Terminal", "PriceDescription": "1"},
+                {"LineName": "M375", "Direction": "Downtown", "PriceDescription": "2"}
+            ]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "HistoricalLines": [
+                {"LineName": "M375", "Direction": "Downtown", "PriceDescription": "2"},
+                {"LineName": "B932", "Direction": "Terminal", "PriceDescription": "1"}
+            ]
+        }));
+
+        let diff = compare_metadata(&left, &right);
+        let historical_lines = diff
+            .children
+            .iter()
+            .find(|node| node.path == "HistoricalLines")
+            .unwrap_or_else(|| panic!("missing diff child for HistoricalLines: {diff:#?}"));
+
+        assert!(
+            historical_lines
+                .children
+                .iter()
+                .all(|node| !matches!(node.status, DiffStatus::Reordered)),
+            "unexpected keyed-array reorder in HistoricalLines: {historical_lines:#?}"
+        );
+        assert!(
+            historical_lines
+                .children
+                .iter()
+                .all(|node| node.path.starts_with("HistoricalLines[")),
+            "expected positional child paths for HistoricalLines: {historical_lines:#?}"
+        );
+        assert!(
+            historical_lines
+                .children
+                .iter()
+                .all(|node| !node.path.contains("HistoricalLines[M375|Downtown]")),
+            "unexpected business-key path in HistoricalLines: {historical_lines:#?}"
         );
     }
 

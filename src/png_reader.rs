@@ -10,6 +10,7 @@ pub fn extract_stop_plate_metadata(bytes: &[u8]) -> Result<String, CompareError>
     }
 
     let mut offset = PNG_SIGNATURE.len();
+    let mut metadata = None;
     let mut saw_iend = false;
     while offset < bytes.len() {
         let Some(length_bytes) = bytes.get(offset..offset + 4) else {
@@ -40,8 +41,8 @@ pub fn extract_stop_plate_metadata(bytes: &[u8]) -> Result<String, CompareError>
         offset = crc_end;
 
         if chunk_type == b"iTXt" {
-            if let Some(metadata) = parse_stop_plate_itxt(chunk_data)? {
-                return Ok(metadata);
+            if metadata.is_none() {
+                metadata = parse_stop_plate_itxt(chunk_data)?;
             }
         }
         if chunk_type == b"IEND" {
@@ -51,7 +52,7 @@ pub fn extract_stop_plate_metadata(bytes: &[u8]) -> Result<String, CompareError>
     }
 
     if saw_iend {
-        Err(CompareError::MissingStopPlateMetadata)
+        metadata.ok_or(CompareError::MissingStopPlateMetadata)
     } else {
         Err(CompareError::TruncatedChunk)
     }
@@ -197,6 +198,17 @@ mod tests {
             .expect_err("trailer bytes after IEND should be ignored");
 
         assert!(matches!(error, CompareError::MissingStopPlateMetadata));
+    }
+
+    #[test]
+    fn rejects_truncated_png_even_when_stop_plate_metadata_appears_early() {
+        let mut png = Vec::from(b"\x89PNG\r\n\x1a\n".as_slice());
+        png.extend(stop_plate_itxt(r#"{"plate":"ABC123"}"#));
+
+        let error = extract_stop_plate_metadata(&png)
+            .expect_err("metadata should not succeed before IEND is validated");
+
+        assert!(matches!(error, CompareError::TruncatedChunk));
     }
 
     #[test]
