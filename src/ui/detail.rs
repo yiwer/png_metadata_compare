@@ -30,11 +30,8 @@ pub fn draw_detail(ui: &mut eframe::egui::Ui, result: Option<&CompareResultView>
     ui.label(format!("Path: {}", node.path));
     ui.label(format!("Status: {}", status_label(&node.status)));
     ui.label(format!("Summary: {}", node.summary));
-    if is_aggregate_node(node) {
-        ui.label(format!(
-            "Aggregate node with {} child change(s); inspect child entries for concrete values.",
-            node.children.len()
-        ));
+    if let Some(context) = detail_context_text(node) {
+        ui.label(context);
     }
     ui.separator();
     ui.label("Left value");
@@ -55,13 +52,31 @@ fn status_label(status: &DiffStatus) -> &'static str {
     }
 }
 
+fn is_error_node(node: &DiffNode) -> bool {
+    node.status == DiffStatus::Error
+}
+
 fn is_aggregate_node(node: &DiffNode) -> bool {
-    node.left_value.is_none() && node.right_value.is_none()
+    !is_error_node(node) && node.left_value.is_none() && node.right_value.is_none()
+}
+
+fn detail_context_text(node: &DiffNode) -> Option<String> {
+    if is_error_node(node) && node.left_value.is_none() && node.right_value.is_none() {
+        Some("Error node; diagnostics are shown in the summary for this node.".to_string())
+    } else if is_aggregate_node(node) {
+        Some(format!(
+            "Aggregate node with {} child change(s); inspect child entries for concrete values.",
+            node.children.len()
+        ))
+    } else {
+        None
+    }
 }
 
 fn detail_value_text(node: &DiffNode, value: Option<&str>) -> String {
     match value {
         Some(value) => value.to_string(),
+        None if is_error_node(node) => "(not captured for error node)".to_string(),
         None if is_aggregate_node(node) && node.children.is_empty() => {
             "(no direct value snapshot recorded for this node)".to_string()
         }
@@ -72,7 +87,7 @@ fn detail_value_text(node: &DiffNode, value: Option<&str>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::detail_value_text;
+    use super::{detail_context_text, detail_value_text};
     use crate::diff::{DiffNode, DiffStatus};
 
     #[test]
@@ -113,6 +128,23 @@ mod tests {
         assert_eq!(
             detail_value_text(&node, node.right_value.as_deref()),
             "(missing)"
+        );
+    }
+
+    #[test]
+    fn detail_context_text_distinguishes_error_nodes_without_snapshots() {
+        let node = DiffNode {
+            path: "Lines.__error__.left[0]".into(),
+            status: DiffStatus::Error,
+            left_value: None,
+            right_value: None,
+            summary: "missing business key in left at Lines[0]".into(),
+            children: Vec::new(),
+        };
+
+        assert_eq!(
+            detail_context_text(&node).as_deref(),
+            Some("Error node; diagnostics are shown in the summary for this node.")
         );
     }
 }
