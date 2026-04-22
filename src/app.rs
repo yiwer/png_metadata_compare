@@ -407,6 +407,113 @@ mod tests {
     }
 
     #[test]
+    fn compare_pipeline_surfaces_missing_metadata_as_error_result() {
+        use std::fs;
+        use std::path::{Path, PathBuf};
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        struct TestPngFile {
+            path: PathBuf,
+        }
+
+        impl TestPngFile {
+            fn new(label: &str, bytes: Vec<u8>) -> Self {
+                let path = unique_test_path(label);
+                fs::write(&path, bytes).expect("test png should be written");
+                Self { path }
+            }
+
+            fn path(&self) -> &Path {
+                &self.path
+            }
+        }
+
+        impl Drop for TestPngFile {
+            fn drop(&mut self) {
+                let _ = fs::remove_file(&self.path);
+            }
+        }
+
+        fn unique_test_path(label: &str) -> PathBuf {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after epoch")
+                .as_nanos();
+            std::env::temp_dir().join(format!(
+                "png_metadata_compare_{label}_{}_{}.png",
+                std::process::id(),
+                unique
+            ))
+        }
+
+        fn png_with_stop_plate_metadata(json: &str) -> Vec<u8> {
+            let mut bytes = Vec::from(b"\x89PNG\r\n\x1a\n".as_slice());
+            bytes.extend(png_chunk(*b"iTXt", stop_plate_itxt_data(json)));
+            bytes.extend(png_chunk(*b"IEND", Vec::new()));
+            bytes
+        }
+
+        fn png_without_stop_plate_metadata() -> Vec<u8> {
+            let mut bytes = Vec::from(b"\x89PNG\r\n\x1a\n".as_slice());
+            bytes.extend(png_chunk(*b"IEND", Vec::new()));
+            bytes
+        }
+
+        fn stop_plate_itxt_data(json: &str) -> Vec<u8> {
+            let mut data = Vec::new();
+            data.extend_from_slice(b"StopPlateMetadata");
+            data.push(0);
+            data.push(0);
+            data.push(0);
+            data.push(0);
+            data.push(0);
+            data.extend_from_slice(json.as_bytes());
+            data
+        }
+
+        fn png_chunk(kind: [u8; 4], data: Vec<u8>) -> Vec<u8> {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&(data.len() as u32).to_be_bytes());
+            bytes.extend_from_slice(&kind);
+            bytes.extend_from_slice(&data);
+            bytes.extend_from_slice(&0u32.to_be_bytes());
+            bytes
+        }
+
+        let left = TestPngFile::new("missing_left", png_without_stop_plate_metadata());
+        let right = TestPngFile::new(
+            "valid_right",
+            png_with_stop_plate_metadata(r#"{"StopName":"A"}"#),
+        );
+
+        let mut app = PngMetadataCompareApp {
+            left_path: Some(left.path().display().to_string()),
+            right_path: Some(right.path().display().to_string()),
+            ..Default::default()
+        };
+
+        app.run_compare();
+
+        let result = app
+            .result
+            .as_ref()
+            .expect("compare result should be stored for missing metadata");
+        assert_eq!(result.root.path, "StopPlateMetadata");
+        assert_eq!(result.root.status, DiffStatus::Error);
+        assert_eq!(result.summary.error, 1);
+        assert_eq!(result.summary.total(), 1);
+        assert_eq!(result.selected_path.as_deref(), Some("StopPlateMetadata"));
+        assert!(
+            result
+                .change_list
+                .iter()
+                .any(|node| node.path == "StopPlateMetadata" && node.status == DiffStatus::Error),
+            "expected compare pipeline to surface an explicit error result: {:#?}",
+            result.change_list
+        );
+    }
+
+    #[test]
     fn default_selected_path_skips_root_aggregate_when_leaf_change_exists() {
         let changes = vec![
             DiffNode {

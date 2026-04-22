@@ -247,31 +247,27 @@ fn build_key_index<'a>(
 fn business_key_for_path(path: &str) -> Option<BusinessKeyFn> {
     match terminal_path_segment(path) {
         "GroupItems" => Some(|value| value.get("SequenceNo")?.as_str().map(str::to_owned)),
-        "Lines" => {
-            Some(|value| {
-                let line_name = value.get("LineName")?.as_str()?;
-                let direction = value
-                    .get("Direction")
-                    .and_then(|direction| direction.as_str());
-                match direction {
-                    Some(direction) if !direction.is_empty() => {
-                        Some(format!("{line_name}|{direction}"))
-                    }
-                    _ => Some(line_name.to_owned()),
+        "Lines" => Some(|value| {
+            let line_name = value.get("LineName")?.as_str()?;
+            let direction = value
+                .get("Direction")
+                .and_then(|direction| direction.as_str());
+            match direction {
+                Some(direction) if !direction.is_empty() => {
+                    Some(format!("{line_name}|{direction}"))
                 }
-            })
-        }
-        "RouteStops" => {
-            Some(|value| {
-                let sequence = value.get("Sequence").and_then(|sequence| sequence.as_i64());
-                let name = value.get("Name").and_then(|name| name.as_str());
-                match (sequence, name) {
-                    (Some(sequence), Some(name)) => Some(format!("{sequence}|{name}")),
-                    (_, Some(name)) => Some(name.to_owned()),
-                    _ => None,
-                }
-            })
-        }
+                _ => Some(line_name.to_owned()),
+            }
+        }),
+        "RouteStops" => Some(|value| {
+            let sequence = value.get("Sequence").and_then(|sequence| sequence.as_i64());
+            let name = value.get("Name").and_then(|name| name.as_str());
+            match (sequence, name) {
+                (Some(sequence), Some(name)) => Some(format!("{sequence}|{name}")),
+                (_, Some(name)) => Some(name.to_owned()),
+                _ => None,
+            }
+        }),
         _ => None,
     }
 }
@@ -471,7 +467,7 @@ fn collect_changes(node: &DiffNode, changes: &mut Vec<DiffNode>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{compare_metadata, flatten_changes, DiffStatus};
+    use super::{DiffStatus, compare_metadata, flatten_changes};
     use crate::error::CompareError;
     use crate::metadata::MetadataLoadResult;
     use serde_json::json;
@@ -904,6 +900,29 @@ mod tests {
                 .any(|node| node.path == "Lines[M375|Downtown].PriceDescription"),
             "expected leaf change in flattened list: {changes:#?}"
         );
+    }
+
+    #[test]
+    fn keeps_error_node_visible_in_flattened_results() {
+        let left = MetadataLoadResult::Error(CompareError::MissingStopPlateMetadata);
+        let right = MetadataLoadResult::Parsed(json!({"StopName": "A"}));
+
+        let diff = compare_metadata(&left, &right);
+        let changes = flatten_changes(&diff);
+        let error_node = changes
+            .iter()
+            .find(|node| node.path == "StopPlateMetadata")
+            .unwrap_or_else(|| panic!("expected flattened root error node: {changes:#?}"));
+
+        assert_eq!(error_node.status, DiffStatus::Error);
+        assert!(
+            error_node
+                .left_value
+                .as_deref()
+                .is_some_and(|value| value.contains("missing StopPlate metadata")),
+            "expected left error details to stay attached to flattened error node: {error_node:#?}"
+        );
+        assert!(error_node.children.is_empty());
     }
 
     #[test]
