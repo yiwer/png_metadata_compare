@@ -1,4 +1,5 @@
-use crate::app::CompareResultView;
+use crate::app::{BatchSelection, CompareResultView};
+use crate::batch_report::{BatchCompareReport, MatchStrategy, UnmatchedFile};
 use crate::diff::{DiffNode, DiffStatus};
 
 pub fn find_node_by_path<'a>(node: &'a DiffNode, path: &str) -> Option<&'a DiffNode> {
@@ -39,6 +40,86 @@ pub fn draw_detail(ui: &mut eframe::egui::Ui, result: Option<&CompareResultView>
     ui.separator();
     ui.label("Right value");
     ui.monospace(detail_value_text(node, node.right_value.as_deref()));
+}
+
+pub fn draw_batch_detail(
+    ui: &mut eframe::egui::Ui,
+    report: Option<&BatchCompareReport>,
+    selection: Option<BatchSelection>,
+) {
+    let Some(report) = report else {
+        ui.label("Run directory compare to inspect batch details.");
+        return;
+    };
+
+    let Some(selection) = selection else {
+        ui.label("Select a batch item to inspect details.");
+        return;
+    };
+
+    for line in batch_detail_lines(report, Some(selection)) {
+        ui.label(line);
+    }
+}
+
+pub(crate) fn batch_detail_lines(
+    report: &BatchCompareReport,
+    selection: Option<BatchSelection>,
+) -> Vec<String> {
+    let Some(selection) = selection else {
+        return vec!["Select a batch item to inspect details.".to_string()];
+    };
+
+    match selection {
+        BatchSelection::Identical(index) => {
+            let Some(identical) = report.identical.get(index) else {
+                return vec!["The selected batch item is no longer available.".to_string()];
+            };
+            vec![
+                format!("File: {}", identical.pair.file_name),
+                "Status: identical".to_string(),
+                format!(
+                    "Match strategy: {}",
+                    match_strategy_label(&identical.pair.match_strategy)
+                ),
+                format!(
+                    "Left: {}",
+                    identical.pair.left.relative_path.to_string_lossy()
+                ),
+                format!(
+                    "Right: {}",
+                    identical.pair.right.relative_path.to_string_lossy()
+                ),
+            ]
+        }
+        BatchSelection::Different(index) => {
+            let Some(different) = report.different.get(index) else {
+                return vec!["The selected batch item is no longer available.".to_string()];
+            };
+            vec![
+                format!("File: {}", different.pair.file_name),
+                "Status: different".to_string(),
+                format!("Total changes: {}", different.summary.total()),
+                format!("Modified: {}", different.summary.modified),
+                format!("Added: {}", different.summary.added),
+                format!("Removed: {}", different.summary.removed),
+                format!("Reordered: {}", different.summary.reordered),
+                format!("Errors: {}", different.summary.error),
+            ]
+        }
+        BatchSelection::LeftOnly(index) => {
+            let Some(unmatched) = report.left_only.get(index) else {
+                return vec!["The selected batch item is no longer available.".to_string()];
+            };
+            unmatched_detail_lines(unmatched, "left only")
+        }
+        BatchSelection::RightOnly(index) => {
+            let Some(unmatched) = report.right_only.get(index) else {
+                return vec!["The selected batch item is no longer available.".to_string()];
+            };
+            unmatched_detail_lines(unmatched, "right only")
+        }
+    }
 }
 
 fn status_label(status: &DiffStatus) -> &'static str {
@@ -85,10 +166,33 @@ fn detail_value_text(node: &DiffNode, value: Option<&str>) -> String {
     }
 }
 
+fn unmatched_detail_lines(unmatched: &UnmatchedFile, status: &str) -> Vec<String> {
+    vec![
+        format!("File: {}", unmatched.file.file_name),
+        format!("Status: {status}"),
+        format!(
+            "Relative path: {}",
+            unmatched.file.relative_path.to_string_lossy()
+        ),
+        format!("Reason: {}", unmatched.reason),
+    ]
+}
+
+fn match_strategy_label(strategy: &MatchStrategy) -> &'static str {
+    match strategy {
+        MatchStrategy::FileName => "file name",
+        MatchStrategy::FileNameAndParentDir => "file name + parent directory",
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{detail_context_text, detail_value_text};
+    use super::{batch_detail_lines, detail_context_text, detail_value_text};
+    use crate::app::BatchSelection;
+    use crate::batch_report::{BatchCompareReport, UnmatchedFile, UnmatchedSide};
+    use crate::batch_scan::BatchFileRecord;
     use crate::diff::{DiffNode, DiffStatus};
+    use std::path::PathBuf;
 
     #[test]
     fn detail_value_text_marks_container_nodes_without_direct_snapshot() {
@@ -145,6 +249,33 @@ mod tests {
         assert_eq!(
             detail_context_text(&node).as_deref(),
             Some("Error node; diagnostics are shown in the summary for this node.")
+        );
+    }
+
+    #[test]
+    fn batch_detail_lines_describe_unmatched_items_with_reason() {
+        let report = BatchCompareReport {
+            left_only: vec![UnmatchedFile {
+                side: UnmatchedSide::Left,
+                file: BatchFileRecord {
+                    absolute_path: PathBuf::from("C:/batch/left/left-only.png"),
+                    relative_path: PathBuf::from("left-only.png"),
+                    file_name: "left-only.png".to_string(),
+                    parent_dir_name: None,
+                },
+                reason: "no file named 'left-only.png' found on right side".to_string(),
+            }],
+            ..BatchCompareReport::default()
+        };
+
+        assert_eq!(
+            batch_detail_lines(&report, Some(BatchSelection::LeftOnly(0))),
+            vec![
+                "File: left-only.png".to_string(),
+                "Status: left only".to_string(),
+                "Relative path: left-only.png".to_string(),
+                "Reason: no file named 'left-only.png' found on right side".to_string(),
+            ]
         );
     }
 }
