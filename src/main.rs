@@ -1,4 +1,5 @@
 mod app;
+mod batch_report;
 mod batch_scan;
 mod diff;
 mod error;
