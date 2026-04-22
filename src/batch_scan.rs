@@ -17,22 +17,53 @@ pub struct BatchFileRecord {
     pub parent_dir_name: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatchScanIssue {
+    pub path: PathBuf,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BestEffortScanResult {
+    pub files: Vec<BatchFileRecord>,
+    pub issues: Vec<BatchScanIssue>,
+    pub root_scan_failed: bool,
+}
+
 // Staged API for upcoming batch-compare wiring in later tasks.
 #[allow(dead_code)]
 pub fn scan_png_files(root: &Path) -> Result<Vec<BatchFileRecord>, CompareError> {
-    let root_absolute = if root.is_absolute() {
-        root.to_path_buf()
-    } else {
-        root.canonicalize().map_err(|err| CompareError::FileRead {
-            path: root.to_path_buf(),
-            reason: err.to_string(),
-        })?
-    };
+    let root_absolute = resolve_root_absolute(root)?;
 
     let mut records = Vec::new();
     walk_png_files(&root_absolute, &root_absolute, &mut records)?;
     records.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
     Ok(records)
+}
+
+pub fn scan_png_files_best_effort(root: &Path) -> BestEffortScanResult {
+    let root_absolute = match resolve_root_absolute(root) {
+        Ok(root_absolute) => root_absolute,
+        Err(error) => {
+            return BestEffortScanResult {
+                files: Vec::new(),
+                issues: vec![scan_issue_from_error(root, &error)],
+                root_scan_failed: true,
+            };
+        }
+    };
+
+    let mut result = BestEffortScanResult::default();
+    result.root_scan_failed = !walk_png_files_best_effort(
+        &root_absolute,
+        &root_absolute,
+        &mut result.files,
+        &mut result.issues,
+    );
+    result
+        .files
+        .sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    result
 }
 
 // Staged API for upcoming batch-compare wiring in later tasks.
@@ -49,10 +80,11 @@ pub fn build_pairing(left: &[BatchFileRecord], right: &[BatchFileRecord]) -> Pai
     for file_name in file_names {
         let left_group = left_by_file_name.remove(&file_name).unwrap_or_default();
         let right_group = right_by_file_name.remove(&file_name).unwrap_or_default();
+        let display_file_name = display_file_name(&left_group, &right_group, &file_name);
 
         if left_group.len() == 1 && right_group.len() == 1 {
             result.matched.push(MatchedPair {
-                file_name: file_name.clone(),
+                file_name: display_file_name.clone(),
                 left: left_group[0].clone(),
                 right: right_group[0].clone(),
                 match_strategy: MatchStrategy::FileName,
@@ -65,7 +97,7 @@ pub fn build_pairing(left: &[BatchFileRecord], right: &[BatchFileRecord]) -> Pai
                 &mut result.right_only,
                 UnmatchedSide::Right,
                 right_group,
-                format!("no file named '{file_name}' found on left side"),
+                format!("no file named '{display_file_name}' found on left side"),
             );
             continue;
         }
@@ -75,12 +107,12 @@ pub fn build_pairing(left: &[BatchFileRecord], right: &[BatchFileRecord]) -> Pai
                 &mut result.left_only,
                 UnmatchedSide::Left,
                 left_group,
-                format!("no file named '{file_name}' found on right side"),
+                format!("no file named '{display_file_name}' found on right side"),
             );
             continue;
         }
 
-        resolve_duplicate_file_name_group(&file_name, left_group, right_group, &mut result);
+        resolve_duplicate_file_name_group(&display_file_name, left_group, right_group, &mut result);
     }
 
     result.matched.sort_by(|left, right| {
@@ -110,7 +142,7 @@ fn group_by_file_name(records: &[BatchFileRecord]) -> HashMap<String, Vec<BatchF
 
     for record in records {
         groups
-            .entry(record.file_name.clone())
+            .entry(normalize_pairing_component(&record.file_name))
             .or_insert_with(Vec::new)
             .push(record.clone());
     }
@@ -134,6 +166,7 @@ fn resolve_duplicate_file_name_group(
     for parent_key in parent_keys {
         let left_candidates = left_by_parent.remove(&parent_key).unwrap_or_default();
         let right_candidates = right_by_parent.remove(&parent_key).unwrap_or_default();
+        let display_parent_dir = display_parent_dir_name(&left_candidates, &right_candidates);
 
         if left_candidates.len() == 1 && right_candidates.len() == 1 {
             result.matched.push(MatchedPair {
@@ -152,7 +185,7 @@ fn resolve_duplicate_file_name_group(
                 right_candidates,
                 format!(
                     "duplicate file name '{file_name}' has no left-side counterpart in parent directory '{}'",
-                    format_parent_dir_name(&parent_key)
+                    display_parent_dir
                 ),
             );
             continue;
@@ -165,7 +198,7 @@ fn resolve_duplicate_file_name_group(
                 left_candidates,
                 format!(
                     "duplicate file name '{file_name}' has no right-side counterpart in parent directory '{}'",
-                    format_parent_dir_name(&parent_key)
+                    display_parent_dir
                 ),
             );
             continue;
@@ -196,7 +229,12 @@ fn group_by_parent_dir(
 
     for record in records {
         groups
-            .entry(record.parent_dir_name.clone())
+            .entry(
+                record
+                    .parent_dir_name
+                    .as_ref()
+                    .map(|name| normalize_pairing_component(name)),
+            )
             .or_insert_with(Vec::new)
             .push(record);
     }
@@ -219,10 +257,15 @@ fn add_unmatched_files(
     }
 }
 
-fn format_parent_dir_name(parent_dir_name: &Option<String>) -> &str {
-    parent_dir_name
-        .as_deref()
-        .unwrap_or("<root>")
+fn resolve_root_absolute(root: &Path) -> Result<PathBuf, CompareError> {
+    if root.is_absolute() {
+        Ok(root.to_path_buf())
+    } else {
+        root.canonicalize().map_err(|err| CompareError::FileRead {
+            path: root.to_path_buf(),
+            reason: err.to_string(),
+        })
+    }
 }
 
 fn walk_png_files(
@@ -255,35 +298,141 @@ fn walk_png_files(
             continue;
         }
 
-        let relative_path = path
-            .strip_prefix(root)
-            .map_err(|err| CompareError::FileRead {
-                path: path.clone(),
-                reason: err.to_string(),
-            })?
-            .to_path_buf();
-        let file_name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| CompareError::FileRead {
-                path: path.clone(),
-                reason: "file name is not valid UTF-8".to_string(),
-            })?
-            .to_string();
-        let parent_dir_name = relative_path
-            .parent()
-            .and_then(|parent| parent.file_name())
-            .map(|name| name.to_string_lossy().to_string());
-
-        records.push(BatchFileRecord {
-            absolute_path: path,
-            relative_path,
-            file_name,
-            parent_dir_name,
-        });
+        records.push(record_png_file(root, path)?);
     }
 
     Ok(())
+}
+
+fn walk_png_files_best_effort(
+    root: &Path,
+    directory: &Path,
+    records: &mut Vec<BatchFileRecord>,
+    issues: &mut Vec<BatchScanIssue>,
+) -> bool {
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(err) => {
+            issues.push(BatchScanIssue {
+                path: directory.to_path_buf(),
+                reason: err.to_string(),
+            });
+            return false;
+        }
+    };
+
+    for entry_result in entries {
+        let entry = match entry_result {
+            Ok(entry) => entry,
+            Err(err) => {
+                issues.push(BatchScanIssue {
+                    path: directory.to_path_buf(),
+                    reason: err.to_string(),
+                });
+                continue;
+            }
+        };
+        let path = entry.path();
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(err) => {
+                issues.push(BatchScanIssue {
+                    path: path.clone(),
+                    reason: err.to_string(),
+                });
+                continue;
+            }
+        };
+
+        if file_type.is_dir() {
+            walk_png_files_best_effort(root, &path, records, issues);
+            continue;
+        }
+
+        if !file_type.is_file() || !is_png_path(&path) {
+            continue;
+        }
+
+        match record_png_file(root, path) {
+            Ok(record) => records.push(record),
+            Err(error) => issues.push(scan_issue_from_error(root, &error)),
+        }
+    }
+
+    true
+}
+
+fn record_png_file(root: &Path, path: PathBuf) -> Result<BatchFileRecord, CompareError> {
+    let relative_path = path
+        .strip_prefix(root)
+        .map_err(|err| CompareError::FileRead {
+            path: path.clone(),
+            reason: err.to_string(),
+        })?
+        .to_path_buf();
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| CompareError::FileRead {
+            path: path.clone(),
+            reason: "file name is not valid UTF-8".to_string(),
+        })?
+        .to_string();
+    let parent_dir_name = relative_path
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .map(|name| name.to_string_lossy().to_string());
+
+    Ok(BatchFileRecord {
+        absolute_path: path,
+        relative_path,
+        file_name,
+        parent_dir_name,
+    })
+}
+
+fn scan_issue_from_error(fallback_path: &Path, error: &CompareError) -> BatchScanIssue {
+    match error {
+        CompareError::FileRead { path, reason } => BatchScanIssue {
+            path: path.clone(),
+            reason: reason.clone(),
+        },
+        _ => BatchScanIssue {
+            path: fallback_path.to_path_buf(),
+            reason: error.to_string(),
+        },
+    }
+}
+
+fn normalize_pairing_component(value: &str) -> String {
+    if cfg!(windows) {
+        value.to_lowercase()
+    } else {
+        value.to_string()
+    }
+}
+
+fn display_file_name(
+    left_group: &[BatchFileRecord],
+    right_group: &[BatchFileRecord],
+    normalized_file_name: &str,
+) -> String {
+    left_group
+        .first()
+        .or_else(|| right_group.first())
+        .map(|record| record.file_name.clone())
+        .unwrap_or_else(|| normalized_file_name.to_string())
+}
+
+fn display_parent_dir_name(
+    left_group: &[BatchFileRecord],
+    right_group: &[BatchFileRecord],
+) -> String {
+    left_group
+        .iter()
+        .chain(right_group.iter())
+        .find_map(|record| record.parent_dir_name.clone())
+        .unwrap_or_else(|| "<root>".to_string())
 }
 
 fn is_png_path(path: &Path) -> bool {
@@ -299,7 +448,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{build_pairing, scan_png_files, BatchFileRecord};
+    use super::{BatchFileRecord, build_pairing, scan_png_files};
     use crate::batch_report::{MatchStrategy, UnmatchedSide};
 
     struct TestDir {
@@ -391,7 +540,12 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(
             records[0].absolute_path,
-            fixture.path().join("a").join("b").join("c").join("image.png")
+            fixture
+                .path()
+                .join("a")
+                .join("b")
+                .join("c")
+                .join("image.png")
         );
         assert_eq!(records[0].file_name, "image.png");
         assert_eq!(records[0].parent_dir_name.as_deref(), Some("c"));
@@ -468,6 +622,41 @@ mod tests {
     }
 
     #[test]
+    fn build_pairing_matches_file_and_parent_names_case_insensitively_on_windows() {
+        let left = vec![record("jobs/RouteA/Foo.PNG"), record("jobs/RouteB/Foo.PNG")];
+        let right = vec![
+            record("incoming/routea/foo.png"),
+            record("incoming/routeb/foo.png"),
+        ];
+
+        let pairing = build_pairing(&left, &right);
+
+        if cfg!(windows) {
+            assert_eq!(pairing.matched.len(), 2);
+            assert!(
+                pairing
+                    .matched
+                    .iter()
+                    .all(|pair| pair.match_strategy == MatchStrategy::FileNameAndParentDir)
+            );
+
+            let mut matched_parents: Vec<&str> = pairing
+                .matched
+                .iter()
+                .map(|pair| pair.left.parent_dir_name.as_deref().unwrap_or(""))
+                .collect();
+            matched_parents.sort_unstable();
+            assert_eq!(matched_parents, vec!["RouteA", "RouteB"]);
+            assert!(pairing.left_only.is_empty());
+            assert!(pairing.right_only.is_empty());
+        } else {
+            assert!(pairing.matched.is_empty());
+            assert_eq!(pairing.left_only.len(), 2);
+            assert_eq!(pairing.right_only.len(), 2);
+        }
+    }
+
+    #[test]
     fn build_pairing_keeps_still_ambiguous_duplicates_unmatched_on_both_sides() {
         let left = vec![
             record("left/shared/dup.png"),
@@ -482,14 +671,18 @@ mod tests {
         assert!(pairing.matched.is_empty());
         assert_eq!(pairing.left_only.len(), 2);
         assert_eq!(pairing.right_only.len(), 2);
-        assert!(pairing
-            .left_only
-            .iter()
-            .all(|item| item.side == UnmatchedSide::Left));
-        assert!(pairing
-            .right_only
-            .iter()
-            .all(|item| item.side == UnmatchedSide::Right));
+        assert!(
+            pairing
+                .left_only
+                .iter()
+                .all(|item| item.side == UnmatchedSide::Left)
+        );
+        assert!(
+            pairing
+                .right_only
+                .iter()
+                .all(|item| item.side == UnmatchedSide::Right)
+        );
         assert!(pairing.left_only.iter().all(
             |item| item.reason
                 == "ambiguous duplicate file name group for 'dup.png' after parent directory refinement"
