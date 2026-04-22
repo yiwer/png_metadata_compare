@@ -39,3 +39,9 @@ fn compare_is_disabled_until_both_paths_are_present() {
 fn compare_pipeline_builds_diff_and_counts() {
     app::run_compare_pipeline_builds_diff_and_counts_test();
 }
+
+#[cfg(test)]
+#[test]
+fn formats_summary_lines_for_sidebar() {
+    ui::summary::formats_summary_lines_for_sidebar_test();
+}

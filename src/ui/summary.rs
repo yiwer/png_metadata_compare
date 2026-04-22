@@ -52,29 +52,33 @@ pub fn draw_summary(ui: &mut eframe::egui::Ui, result: &mut CompareResultView) {
 }
 
 #[cfg(test)]
+pub(crate) fn formats_summary_lines_for_sidebar_test() {
+    let summary = DiffSummary {
+        modified: 5,
+        added: 1,
+        removed: 1,
+        reordered: 2,
+        error: 0,
+    };
+
+    assert_eq!(
+        summary_lines(&summary),
+        vec![
+            "9 total changes".to_string(),
+            "5 modified".to_string(),
+            "1 added".to_string(),
+            "1 removed".to_string(),
+            "2 reordered".to_string(),
+        ]
+    );
+}
+
+#[cfg(test)]
 mod tests {
-    use super::summary_lines;
-    use crate::diff::DiffSummary;
+    use super::formats_summary_lines_for_sidebar_test;
 
     #[test]
     fn formats_summary_lines_for_sidebar() {
-        let summary = DiffSummary {
-            modified: 5,
-            added: 1,
-            removed: 1,
-            reordered: 2,
-            error: 0,
-        };
-
-        assert_eq!(
-            summary_lines(&summary),
-            vec![
-                "9 total changes".to_string(),
-                "5 modified".to_string(),
-                "1 added".to_string(),
-                "1 removed".to_string(),
-                "2 reordered".to_string(),
-            ]
-        );
+        formats_summary_lines_for_sidebar_test();
     }
 }
