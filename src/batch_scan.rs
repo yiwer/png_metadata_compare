@@ -72,7 +72,7 @@ fn walk_png_files(
                 reason: "file name is not valid UTF-8".to_string(),
             })?
             .to_string();
-        let parent_dir_name = path
+        let parent_dir_name = relative_path
             .parent()
             .and_then(|parent| parent.file_name())
             .map(|name| name.to_string_lossy().to_string());
@@ -172,5 +172,37 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].file_name, "image.png");
         assert_eq!(records[0].parent_dir_name.as_deref(), Some("c"));
+    }
+
+    #[test]
+    fn root_level_png_has_no_parent_directory_name() {
+        let fixture = TestDir::new("root_parent_none");
+        write_file(fixture.path(), "root.png");
+
+        let records = scan_png_files(fixture.path()).expect("scan should succeed");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].relative_path, PathBuf::from("root.png"));
+        assert_eq!(records[0].parent_dir_name, None);
+    }
+
+    #[test]
+    fn returns_file_read_error_when_scan_target_is_not_a_directory() {
+        let fixture = TestDir::new("scan_failure");
+        let file_path = fixture.path().join("not_a_directory.png");
+        fs::write(&file_path, b"test").expect("test file should be written");
+
+        let error = scan_png_files(&file_path).expect_err("scan should fail");
+        match error {
+            crate::error::CompareError::FileRead { path, .. } => assert_eq!(path, file_path),
+            other => panic!("expected FileRead error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_directory_returns_no_records() {
+        let fixture = TestDir::new("empty_directory");
+
+        let records = scan_png_files(fixture.path()).expect("scan should succeed");
+        assert!(records.is_empty());
     }
 }
