@@ -9,6 +9,7 @@ pub fn extract_stop_plate_metadata(bytes: &[u8]) -> Result<String, CompareError>
     }
 
     let mut offset = PNG_SIGNATURE.len();
+    let mut saw_iend = false;
     while offset < bytes.len() {
         let Some(length_bytes) = bytes.get(offset..offset + 4) else {
             return Err(CompareError::TruncatedChunk);
@@ -43,11 +44,16 @@ pub fn extract_stop_plate_metadata(bytes: &[u8]) -> Result<String, CompareError>
             }
         }
         if chunk_type == b"IEND" {
+            saw_iend = true;
             break;
         }
     }
 
-    Err(CompareError::MissingStopPlateMetadata)
+    if saw_iend {
+        Err(CompareError::MissingStopPlateMetadata)
+    } else {
+        Err(CompareError::TruncatedChunk)
+    }
 }
 
 fn parse_stop_plate_itxt(data: &[u8]) -> Result<Option<String>, CompareError> {
@@ -174,7 +180,7 @@ mod tests {
 
     #[test]
     fn ignores_trailer_bytes_after_iend() {
-        let mut png = png_with_chunks(vec![chunk(*b"IEND", Vec::new())]);
+        let mut png = png_with_chunks(Vec::new());
         png.extend_from_slice(b"trailing junk that is not a chunk");
 
         let error =
@@ -183,11 +189,23 @@ mod tests {
         assert!(matches!(error, CompareError::MissingStopPlateMetadata));
     }
 
+    #[test]
+    fn rejects_png_without_terminal_iend_chunk() {
+        let mut png = Vec::from(b"\x89PNG\r\n\x1a\n".as_slice());
+        png.extend(chunk(*b"IDAT", Vec::new()));
+
+        let error =
+            extract_stop_plate_metadata(&png).expect_err("missing IEND should be treated as malformed");
+
+        assert!(matches!(error, CompareError::TruncatedChunk));
+    }
+
     fn png_with_chunks(chunks: Vec<Vec<u8>>) -> Vec<u8> {
         let mut bytes = Vec::from(b"\x89PNG\r\n\x1a\n".as_slice());
         for chunk in chunks {
             bytes.extend(chunk);
         }
+        bytes.extend(chunk(*b"IEND", Vec::new()));
         bytes
     }
 
