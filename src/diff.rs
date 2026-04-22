@@ -26,6 +26,11 @@ pub struct DiffNode {
 
 type BusinessKeyFn = fn(&Value) -> Option<String>;
 
+struct KeyedArrayIndex<'a> {
+    items: BTreeMap<String, (usize, &'a Value)>,
+    errors: Vec<DiffNode>,
+}
+
 pub fn compare_metadata(left: &MetadataLoadResult, right: &MetadataLoadResult) -> DiffNode {
     match (left, right) {
         (MetadataLoadResult::Error(left_err), MetadataLoadResult::Error(right_err)) => {
@@ -126,36 +131,19 @@ fn compare_keyed_array(
     right: &[Value],
     key_fn: BusinessKeyFn,
 ) -> DiffNode {
+    let left_index = build_key_index(path, left, key_fn, "left");
+    let right_index = build_key_index(path, right, key_fn, "right");
     let mut children = Vec::new();
-    let left_index = build_key_index(path, left, key_fn);
-    let right_index = build_key_index(path, right, key_fn);
+    children.extend(left_index.errors);
+    children.extend(right_index.errors);
 
-    if let Err(error) = &left_index {
-        children.push(compare_error_node(
-            &format!("{path}.__error__.left"),
-            error.clone(),
-        ));
-    }
-    if let Err(error) = &right_index {
-        children.push(compare_error_node(
-            &format!("{path}.__error__.right"),
-            error.clone(),
-        ));
-    }
-
-    if !children.is_empty() {
-        return aggregate_node(path, left_present, right_present, children);
-    }
-
-    let left_index = left_index.expect("left_index checked above");
-    let right_index = right_index.expect("right_index checked above");
     let mut keys = BTreeSet::new();
-    keys.extend(left_index.keys().cloned());
-    keys.extend(right_index.keys().cloned());
+    keys.extend(left_index.items.keys().cloned());
+    keys.extend(right_index.items.keys().cloned());
 
     for key in keys {
         let child_path = join_key_path(path, &key);
-        match (left_index.get(&key), right_index.get(&key)) {
+        match (left_index.items.get(&key), right_index.items.get(&key)) {
             (Some((left_pos, left_value)), Some((right_pos, right_value))) => {
                 children.push(compare_values(&child_path, Some(left_value), Some(right_value)));
                 if left_pos != right_pos {
@@ -175,18 +163,41 @@ fn build_key_index<'a>(
     path: &str,
     values: &'a [Value],
     key_fn: BusinessKeyFn,
-) -> Result<BTreeMap<String, (usize, &'a Value)>, CompareError> {
-    let mut index = BTreeMap::new();
+    side: &str,
+) -> KeyedArrayIndex<'a> {
+    let mut items = BTreeMap::new();
+    let mut errors = Vec::new();
+    let mut ambiguous_keys = BTreeSet::new();
+
     for (position, value) in values.iter().enumerate() {
-        let key = key_fn(value).unwrap_or_else(|| position.to_string());
-        if index.insert(key.clone(), (position, value)).is_some() {
-            return Err(CompareError::AmbiguousBusinessKey {
-                path: join_path("", path),
-                key,
-            });
+        let Some(key) = key_fn(value) else {
+            errors.push(keyed_array_issue_node(
+                path,
+                side,
+                position,
+                format!("missing business key in {} at {path}[{position}]", side),
+            ));
+            continue;
+        };
+
+        if ambiguous_keys.contains(&key) {
+            continue;
+        }
+
+        if items.insert(key.clone(), (position, value)).is_some() {
+            items.remove(&key);
+            ambiguous_keys.insert(key.clone());
+            errors.push(compare_error_node(
+                &format!("{path}.__error__.{side}[{key}]"),
+                CompareError::AmbiguousBusinessKey {
+                    path: join_path("", path),
+                    key,
+                },
+            ));
         }
     }
-    Ok(index)
+
+    KeyedArrayIndex { items, errors }
 }
 
 fn business_key_for_path(path: &str) -> Option<BusinessKeyFn> {
@@ -252,6 +263,17 @@ fn compare_error_node(path: &str, error: CompareError) -> DiffNode {
         left_value: None,
         right_value: None,
         summary: error.to_string(),
+        children: Vec::new(),
+    }
+}
+
+fn keyed_array_issue_node(path: &str, side: &str, position: usize, summary: String) -> DiffNode {
+    DiffNode {
+        path: format!("{path}.__error__.{side}[{position}]"),
+        status: DiffStatus::Error,
+        left_value: None,
+        right_value: None,
+        summary,
         children: Vec::new(),
     }
 }
@@ -345,7 +367,9 @@ pub fn flatten_changes(node: &DiffNode) -> Vec<DiffNode> {
 
 fn collect_changes(node: &DiffNode, changes: &mut Vec<DiffNode>) {
     if node.status != DiffStatus::Unchanged {
-        changes.push(node.clone());
+        let mut flat_node = node.clone();
+        flat_node.children.clear();
+        changes.push(flat_node);
     }
 
     for child in &node.children {
@@ -629,8 +653,110 @@ mod tests {
             group_items
                 .children
                 .iter()
-                .any(|node| node.status == DiffStatus::Error),
+            .any(|node| node.status == DiffStatus::Error),
             "expected error node for ambiguous business key: {group_items:#?}"
+        );
+    }
+
+    #[test]
+    fn continues_comparing_unique_keyed_items_when_another_key_is_ambiguous() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "GroupItems": [
+                {"SequenceNo": "①", "LineNames": "B932"},
+                {"SequenceNo": "①", "LineNames": "M375"},
+                {"SequenceNo": "②", "LineNames": "M197"}
+            ]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "GroupItems": [
+                {"SequenceNo": "②", "LineNames": "M198"}
+            ]
+        }));
+
+        let diff = compare_metadata(&left, &right);
+        let group_items = diff
+            .children
+            .iter()
+            .find(|node| node.path == "GroupItems")
+            .unwrap_or_else(|| panic!("missing diff child for GroupItems: {diff:#?}"));
+
+        assert!(
+            group_items
+                .children
+                .iter()
+                .any(|node| node.status == DiffStatus::Error && node.summary.contains("①")),
+            "expected ambiguity error node for duplicate key: {group_items:#?}"
+        );
+        assert!(
+            group_items.children.iter().any(|node| {
+                node.path.contains("GroupItems[②]") && node.status == DiffStatus::Modified
+            }),
+            "expected unique keyed item to still be compared: {group_items:#?}"
+        );
+    }
+
+    #[test]
+    fn creates_error_for_missing_business_key_without_falling_back_to_position() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "Lines": [
+                {"Direction": "Terminal", "PriceDescription": "1"},
+                {"LineName": "M375", "Direction": "Downtown", "PriceDescription": "2"}
+            ]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "Lines": [
+                {"LineName": "M375", "Direction": "Downtown", "PriceDescription": "3"}
+            ]
+        }));
+
+        let diff = compare_metadata(&left, &right);
+        let lines = diff
+            .children
+            .iter()
+            .find(|node| node.path == "Lines")
+            .unwrap_or_else(|| panic!("missing diff child for Lines: {diff:#?}"));
+
+        assert!(
+            lines.children.iter().any(|node| {
+                node.status == DiffStatus::Error && node.summary.contains("missing business key")
+            }),
+            "expected explicit error for missing business key: {lines:#?}"
+        );
+        assert!(
+            lines.children.iter().any(|node| {
+                node.path.contains("Lines[M375|Downtown]") && node.status == DiffStatus::Modified
+            }),
+            "expected valid keyed line to still compare by key: {lines:#?}"
+        );
+        assert!(
+            lines.children.iter().all(|node| !node.path.contains("Lines[0]")),
+            "unexpected positional fallback in keyed array: {lines:#?}"
+        );
+    }
+
+    #[test]
+    fn flatten_changes_removes_child_subtrees_from_returned_nodes() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "Lines": [
+                {"LineName": "M375", "Direction": "Downtown", "PriceDescription": "2"}
+            ]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "Lines": [
+                {"LineName": "M375", "Direction": "Downtown", "PriceDescription": "3"}
+            ]
+        }));
+
+        let diff = compare_metadata(&left, &right);
+        let changes = flatten_changes(&diff);
+
+        assert!(
+            changes.iter().all(|node| node.children.is_empty()),
+            "flattened changes should not retain child subtrees: {changes:#?}"
+        );
+        assert!(
+            changes.iter().any(|node| node.path == "Lines[M375|Downtown].PriceDescription"),
+            "expected leaf change in flattened list: {changes:#?}"
         );
     }
 }
