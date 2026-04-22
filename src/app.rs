@@ -401,11 +401,21 @@ impl PngMetadataCompareApp {
                 ui.separator();
                 match self.mode {
                     AppMode::SingleFile => detail::draw_detail(ui, self.result.as_ref()),
-                    AppMode::Directory => detail::draw_batch_detail(
-                        ui,
-                        self.batch_report.as_ref(),
-                        self.batch_selection,
-                    ),
+                    AppMode::Directory => {
+                        if let Some(different) = self.selected_batch_different() {
+                            detail::draw_detail_from_parts(
+                                ui,
+                                &different.diff_root,
+                                different.selected_path.as_deref(),
+                            );
+                        } else {
+                            detail::draw_batch_detail(
+                                ui,
+                                self.batch_report.as_ref(),
+                                self.batch_selection,
+                            );
+                        }
+                    }
                 }
             });
 

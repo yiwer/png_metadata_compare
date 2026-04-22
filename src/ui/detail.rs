@@ -20,14 +20,20 @@ pub fn draw_detail(ui: &mut eframe::egui::Ui, result: Option<&CompareResultView>
         return;
     };
 
-    let Some(selected_path) = result.selected_path.as_deref() else {
-        ui.label("Select a changed node to inspect its details.");
-        return;
-    };
+    draw_detail_from_parts(ui, &result.root, result.selected_path.as_deref());
+}
 
-    let Some(node) = find_node_by_path(&result.root, selected_path) else {
-        ui.label("The selected node is no longer available in the current diff.");
-        return;
+pub fn draw_detail_from_parts(
+    ui: &mut eframe::egui::Ui,
+    root: &DiffNode,
+    selected_path: Option<&str>,
+) {
+    let node = match selected_detail_node(root, selected_path) {
+        Ok(node) => node,
+        Err(message) => {
+            ui.label(message);
+            return;
+        }
     };
 
     ui.label(format!("Path: {}", node.path));
@@ -105,24 +111,7 @@ pub(crate) fn batch_detail_lines(
             let Some(different) = report.different.get(index) else {
                 return vec!["The selected batch item is no longer available.".to_string()];
             };
-            vec![
-                format!("File: {}", different.pair.file_name),
-                "Status: Different".to_string(),
-                format!(
-                    "Left: {}",
-                    normalized_path_text(&different.pair.left.relative_path)
-                ),
-                format!(
-                    "Right: {}",
-                    normalized_path_text(&different.pair.right.relative_path)
-                ),
-                format!("Total changes: {}", different.summary.total()),
-                format!("Modified: {}", different.summary.modified),
-                format!("Added: {}", different.summary.added),
-                format!("Removed: {}", different.summary.removed),
-                format!("Reordered: {}", different.summary.reordered),
-                format!("Errors: {}", different.summary.error),
-            ]
+            node_detail_lines(&different.diff_root, different.selected_path.as_deref())
         }
         BatchSelection::LeftOnly(index) => {
             let Some(unmatched) = report.left_only.get(index) else {
@@ -156,6 +145,39 @@ fn is_error_node(node: &DiffNode) -> bool {
 
 fn is_aggregate_node(node: &DiffNode) -> bool {
     !is_error_node(node) && node.left_value.is_none() && node.right_value.is_none()
+}
+
+fn selected_detail_node<'a>(
+    root: &'a DiffNode,
+    selected_path: Option<&str>,
+) -> Result<&'a DiffNode, &'static str> {
+    let Some(selected_path) = selected_path else {
+        return Err("Select a changed node to inspect its details.");
+    };
+
+    find_node_by_path(root, selected_path)
+        .ok_or("The selected node is no longer available in the current diff.")
+}
+
+pub(crate) fn node_detail_lines(root: &DiffNode, selected_path: Option<&str>) -> Vec<String> {
+    let node = match selected_detail_node(root, selected_path) {
+        Ok(node) => node,
+        Err(message) => return vec![message.to_string()],
+    };
+
+    let mut lines = vec![
+        format!("Path: {}", node.path),
+        format!("Status: {}", status_label(&node.status)),
+        format!("Summary: {}", node.summary),
+    ];
+    if let Some(context) = detail_context_text(node) {
+        lines.push(context);
+    }
+    lines.push("Left value".to_string());
+    lines.push(detail_value_text(node, node.left_value.as_deref()));
+    lines.push("Right value".to_string());
+    lines.push(detail_value_text(node, node.right_value.as_deref()));
+    lines
 }
 
 fn detail_context_text(node: &DiffNode) -> Option<String> {
@@ -210,6 +232,7 @@ fn match_strategy_label(strategy: &MatchStrategy) -> &'static str {
 mod tests {
     use super::{
         batch_detail_lines, batch_detail_panel_lines, detail_context_text, detail_value_text,
+        node_detail_lines,
     };
     use crate::app::BatchSelection;
     use crate::batch_report::{
@@ -271,7 +294,14 @@ mod tests {
                     left_value: None,
                     right_value: None,
                     summary: "root modified".into(),
-                    children: Vec::new(),
+                    children: vec![DiffNode {
+                        path: "StopPlateMetadata.Title".into(),
+                        status: DiffStatus::Modified,
+                        left_value: Some("\"left title\"".into()),
+                        right_value: Some("\"right title\"".into()),
+                        summary: "title modified".into(),
+                        children: Vec::new(),
+                    }],
                 },
                 change_list: Vec::new(),
                 summary: DiffSummary {
@@ -279,7 +309,7 @@ mod tests {
                     added: 1,
                     ..DiffSummary::default()
                 },
-                selected_path: None,
+                selected_path: Some("StopPlateMetadata.Title".into()),
             }],
             left_only: vec![UnmatchedFile {
                 side: UnmatchedSide::Left,
@@ -353,6 +383,23 @@ mod tests {
     }
 
     #[test]
+    fn node_detail_lines_prompt_when_no_node_is_selected() {
+        let root = DiffNode {
+            path: "StopPlateMetadata".into(),
+            status: DiffStatus::Modified,
+            left_value: None,
+            right_value: None,
+            summary: "root modified".into(),
+            children: Vec::new(),
+        };
+
+        assert_eq!(
+            node_detail_lines(&root, None),
+            vec!["Select a changed node to inspect its details.".to_string()]
+        );
+    }
+
+    #[test]
     fn batch_detail_lines_describe_unmatched_items_with_reason() {
         let report = BatchCompareReport {
             left_only: vec![UnmatchedFile {
@@ -418,22 +465,19 @@ mod tests {
     }
 
     #[test]
-    fn batch_detail_panel_lines_describe_different_selection() {
+    fn batch_detail_panel_lines_use_selected_node_details_for_different_selection() {
         let report = sample_report();
 
         assert_eq!(
             batch_detail_panel_lines(Some(&report), Some(BatchSelection::Different(0))),
             vec![
-                "File: changed.png".to_string(),
-                "Status: Different".to_string(),
-                "Left: left/routes/changed.png".to_string(),
-                "Right: right/routes/changed.png".to_string(),
-                "Total changes: 3".to_string(),
-                "Modified: 2".to_string(),
-                "Added: 1".to_string(),
-                "Removed: 0".to_string(),
-                "Reordered: 0".to_string(),
-                "Errors: 0".to_string(),
+                "Path: StopPlateMetadata.Title".to_string(),
+                "Status: Modified".to_string(),
+                "Summary: title modified".to_string(),
+                "Left value".to_string(),
+                "\"left title\"".to_string(),
+                "Right value".to_string(),
+                "\"right title\"".to_string(),
             ]
         );
     }
