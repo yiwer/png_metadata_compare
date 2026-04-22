@@ -2,6 +2,7 @@ use crate::diff::{compare_metadata, flatten_changes, summarize_changes, DiffNode
 use crate::metadata::load_metadata;
 use crate::png_reader::extract_stop_plate_metadata_from_file;
 use crate::ui::{detail, summary, tree};
+use rfd::FileDialog;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -52,30 +53,84 @@ impl PngMetadataCompareApp {
     fn render_scaffold(&mut self, ctx: &eframe::egui::Context) {
         eframe::egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.heading("PNG Metadata Compare");
-            ui.label("Task 1 scaffold");
             ui.separator();
-            ui.horizontal(|ui| {
-                ui.label(format!(
-                    "Left: {}",
-                    self.left_path.as_deref().unwrap_or("Not selected")
-                ));
-                ui.label(format!(
-                    "Right: {}",
-                    self.right_path.as_deref().unwrap_or("Not selected")
-                ));
-                ui.add_enabled(self.can_compare(), eframe::egui::Button::new("Compare"));
+            ui.horizontal_wrapped(|ui| {
+                if ui.button("Choose left PNG").clicked() {
+                    if let Some(path) = FileDialog::new()
+                        .add_filter("PNG image", &["png"])
+                        .pick_file()
+                    {
+                        self.left_path = Some(path.display().to_string());
+                        self.result = None;
+                    }
+                }
+                ui.label(
+                    self.left_path
+                        .as_deref()
+                        .unwrap_or("Left file not selected"),
+                );
+
+                if ui.button("Choose right PNG").clicked() {
+                    if let Some(path) = FileDialog::new()
+                        .add_filter("PNG image", &["png"])
+                        .pick_file()
+                    {
+                        self.right_path = Some(path.display().to_string());
+                        self.result = None;
+                    }
+                }
+                ui.label(
+                    self.right_path
+                        .as_deref()
+                        .unwrap_or("Right file not selected"),
+                );
+
+                if ui
+                    .add_enabled(self.can_compare(), eframe::egui::Button::new("Compare"))
+                    .clicked()
+                {
+                    self.run_compare();
+                }
+
+                if ui
+                    .add_enabled(
+                        self.left_path.is_some() || self.right_path.is_some(),
+                        eframe::egui::Button::new("Swap"),
+                    )
+                    .clicked()
+                {
+                    std::mem::swap(&mut self.left_path, &mut self.right_path);
+                    self.result = None;
+                }
             });
         });
 
         eframe::egui::SidePanel::left("summary_panel").show(ctx, |ui| {
-            summary::draw_summary(ui);
+            ui.heading("Summary");
+            ui.separator();
+
+            if let Some(result) = self.result.as_mut() {
+                summary::draw_summary(ui, result);
+            } else {
+                ui.label("Choose two PNG files and run compare to view the summary.");
+            }
         });
 
-        eframe::egui::CentralPanel::default().show(ctx, |ui| {
-            ui.columns(2, |columns| {
-                tree::draw_tree(&mut columns[0]);
-                detail::draw_detail(&mut columns[1]);
+        eframe::egui::TopBottomPanel::bottom("detail_panel")
+            .resizable(true)
+            .show(ctx, |ui| {
+                ui.heading("Details");
+                ui.separator();
+                detail::draw_detail(ui, self.result.as_ref());
             });
+
+        eframe::egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Diff Tree");
+            ui.separator();
+            if self.result.is_none() {
+                ui.label("Run compare to populate the diff tree.");
+            }
+            tree::draw_tree(ui);
         });
     }
 }
