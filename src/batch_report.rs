@@ -68,7 +68,38 @@ pub struct BatchCompareReport {
     pub right_only: Vec<UnmatchedFile>,
 }
 
-pub type MatchedPairCompareResult = (MatchedPair, DiffNode, Vec<DiffNode>, DiffSummary);
+#[derive(Clone, Debug)]
+pub enum MatchedPairCompareResult {
+    Identical {
+        pair: MatchedPair,
+    },
+    Different {
+        pair: MatchedPair,
+        diff_root: DiffNode,
+        change_list: Vec<DiffNode>,
+        summary: DiffSummary,
+    },
+}
+
+impl MatchedPairCompareResult {
+    pub fn identical(pair: MatchedPair) -> Self {
+        Self::Identical { pair }
+    }
+
+    pub fn different(
+        pair: MatchedPair,
+        diff_root: DiffNode,
+        change_list: Vec<DiffNode>,
+        summary: DiffSummary,
+    ) -> Self {
+        Self::Different {
+            pair,
+            diff_root,
+            change_list,
+            summary,
+        }
+    }
+}
 
 pub fn build_batch_results(
     matched: Vec<MatchedPairCompareResult>,
@@ -84,17 +115,25 @@ pub fn build_batch_results(
         right_only,
     };
 
-    for (pair, diff_root, change_list, summary) in matched {
-        if summary.total() == 0 {
-            report.identical.push(IdenticalPairResult { pair });
-        } else {
-            report.different.push(DifferentPairResult {
+    for matched_result in matched {
+        match matched_result {
+            MatchedPairCompareResult::Identical { pair } => {
+                report.identical.push(IdenticalPairResult { pair });
+            }
+            MatchedPairCompareResult::Different {
                 pair,
                 diff_root,
                 change_list,
                 summary,
-                selected_path: None,
-            });
+            } => {
+                report.different.push(DifferentPairResult {
+                    pair,
+                    diff_root,
+                    change_list,
+                    summary,
+                    selected_path: None,
+                });
+            }
         }
     }
 
@@ -103,7 +142,9 @@ pub fn build_batch_results(
 
 #[cfg(test)]
 mod tests {
-    use super::{MatchStrategy, MatchedPair, UnmatchedFile, UnmatchedSide};
+    use super::{
+        MatchStrategy, MatchedPair, MatchedPairCompareResult, UnmatchedFile, UnmatchedSide,
+    };
     use crate::batch_report::{BatchIssue, build_batch_results};
     use crate::batch_scan::BatchFileRecord;
     use crate::diff::{DiffNode, DiffStatus, DiffSummary};
@@ -149,13 +190,18 @@ mod tests {
         }
     }
 
+    fn assert_summary_eq(actual: &DiffSummary, expected: &DiffSummary) {
+        assert_eq!(actual.modified, expected.modified);
+        assert_eq!(actual.added, expected.added);
+        assert_eq!(actual.removed, expected.removed);
+        assert_eq!(actual.reordered, expected.reordered);
+        assert_eq!(actual.error, expected.error);
+    }
+
     #[test]
-    fn classifies_zero_total_summary_as_identical() {
-        let matched = vec![(
+    fn keeps_identical_results_in_identical_bucket() {
+        let matched = vec![MatchedPairCompareResult::identical(
             pair("same.png"),
-            diff_root("same", DiffStatus::Unchanged),
-            vec![],
-            DiffSummary::default(),
         )];
 
         let report = build_batch_results(matched, vec![], vec![], vec![]);
@@ -166,15 +212,18 @@ mod tests {
     }
 
     #[test]
-    fn classifies_non_zero_total_summary_as_different() {
-        let matched = vec![(
+    fn keeps_different_payload_and_sets_selected_path_to_none() {
+        let expected_diff_root = diff_root("changed", DiffStatus::Modified);
+        let expected_change_list = vec![diff_root("changed.field", DiffStatus::Modified)];
+        let expected_summary = DiffSummary {
+            modified: 1,
+            ..DiffSummary::default()
+        };
+        let matched = vec![MatchedPairCompareResult::different(
             pair("changed.png"),
-            diff_root("changed", DiffStatus::Modified),
-            vec![diff_root("changed.field", DiffStatus::Modified)],
-            DiffSummary {
-                modified: 1,
-                ..DiffSummary::default()
-            },
+            expected_diff_root.clone(),
+            expected_change_list.clone(),
+            expected_summary.clone(),
         )];
 
         let report = build_batch_results(matched, vec![], vec![], vec![]);
@@ -182,6 +231,10 @@ mod tests {
         assert_eq!(report.different.len(), 1);
         assert!(report.identical.is_empty());
         assert_eq!(report.different[0].pair.file_name, "changed.png");
+        assert_eq!(report.different[0].diff_root, expected_diff_root);
+        assert_eq!(report.different[0].change_list, expected_change_list);
+        assert_summary_eq(&report.different[0].summary, &expected_summary);
+        assert_eq!(report.different[0].selected_path, None);
     }
 
     #[test]
