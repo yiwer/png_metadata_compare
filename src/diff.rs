@@ -1,7 +1,7 @@
 use crate::error::CompareError;
 use crate::metadata::MetadataLoadResult;
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +23,8 @@ pub struct DiffNode {
     pub summary: String,
     pub children: Vec<DiffNode>,
 }
+
+type BusinessKeyFn = fn(&Value) -> Option<String>;
 
 pub fn compare_metadata(left: &MetadataLoadResult, right: &MetadataLoadResult) -> DiffNode {
     match (left, right) {
@@ -53,7 +55,7 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
                 .map(|key| compare_values(&join_path(path, &key), left_map.get(&key), right_map.get(&key)))
                 .collect();
 
-            aggregate_node(path, left, right, children)
+            aggregate_node(path, left.is_some(), right.is_some(), children)
         }
         (None, Some(Value::Object(right_map))) => {
             let children = right_map
@@ -61,7 +63,7 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
                 .map(|(key, value)| compare_values(&join_path(path, key), None, Some(value)))
                 .collect();
 
-            aggregate_node(path, left, right, children)
+            aggregate_node(path, left.is_some(), right.is_some(), children)
         }
         (Some(Value::Object(left_map)), None) => {
             let children = left_map
@@ -69,39 +71,16 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
                 .map(|(key, value)| compare_values(&join_path(path, key), Some(value), None))
                 .collect();
 
-            aggregate_node(path, left, right, children)
+            aggregate_node(path, left.is_some(), right.is_some(), children)
         }
         (Some(Value::Array(left_items)), Some(Value::Array(right_items))) => {
-            let max_len = left_items.len().max(right_items.len());
-            let children = (0..max_len)
-                .map(|index| {
-                    compare_values(
-                        &join_index_path(path, index),
-                        left_items.get(index),
-                        right_items.get(index),
-                    )
-                })
-                .collect();
-
-            aggregate_node(path, left, right, children)
+            compare_array(path, Some(left_items), Some(right_items))
         }
         (None, Some(Value::Array(right_items))) => {
-            let children = right_items
-                .iter()
-                .enumerate()
-                .map(|(index, value)| compare_values(&join_index_path(path, index), None, Some(value)))
-                .collect();
-
-            aggregate_node(path, left, right, children)
+            compare_array(path, None, Some(right_items))
         }
         (Some(Value::Array(left_items)), None) => {
-            let children = left_items
-                .iter()
-                .enumerate()
-                .map(|(index, value)| compare_values(&join_index_path(path, index), Some(value), None))
-                .collect();
-
-            aggregate_node(path, left, right, children)
+            compare_array(path, Some(left_items), None)
         }
         _ => {
             let status = match (left, right) {
@@ -114,6 +93,126 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
 
             value_node(path, status, left, right)
         }
+    }
+}
+
+fn compare_array(path: &str, left: Option<&[Value]>, right: Option<&[Value]>) -> DiffNode {
+    let left_items = left.unwrap_or(&[]);
+    let right_items = right.unwrap_or(&[]);
+
+    if let Some(key_fn) = business_key_for_path(path) {
+        return compare_keyed_array(path, left.is_some(), right.is_some(), left_items, right_items, key_fn);
+    }
+
+    let max_len = left_items.len().max(right_items.len());
+    let children = (0..max_len)
+        .map(|index| {
+            compare_values(
+                &join_index_path(path, index),
+                left_items.get(index),
+                right_items.get(index),
+            )
+        })
+        .collect();
+
+    aggregate_node(path, left.is_some(), right.is_some(), children)
+}
+
+fn compare_keyed_array(
+    path: &str,
+    left_present: bool,
+    right_present: bool,
+    left: &[Value],
+    right: &[Value],
+    key_fn: BusinessKeyFn,
+) -> DiffNode {
+    let mut children = Vec::new();
+    let left_index = build_key_index(path, left, key_fn);
+    let right_index = build_key_index(path, right, key_fn);
+
+    if let Err(error) = &left_index {
+        children.push(compare_error_node(
+            &format!("{path}.__error__.left"),
+            error.clone(),
+        ));
+    }
+    if let Err(error) = &right_index {
+        children.push(compare_error_node(
+            &format!("{path}.__error__.right"),
+            error.clone(),
+        ));
+    }
+
+    if !children.is_empty() {
+        return aggregate_node(path, left_present, right_present, children);
+    }
+
+    let left_index = left_index.expect("left_index checked above");
+    let right_index = right_index.expect("right_index checked above");
+    let mut keys = BTreeSet::new();
+    keys.extend(left_index.keys().cloned());
+    keys.extend(right_index.keys().cloned());
+
+    for key in keys {
+        let child_path = join_key_path(path, &key);
+        match (left_index.get(&key), right_index.get(&key)) {
+            (Some((left_pos, left_value)), Some((right_pos, right_value))) => {
+                children.push(compare_values(&child_path, Some(left_value), Some(right_value)));
+                if left_pos != right_pos {
+                    children.push(reorder_node(&child_path, *left_pos, *right_pos));
+                }
+            }
+            (Some((_, left_value)), None) => children.push(compare_values(&child_path, Some(left_value), None)),
+            (None, Some((_, right_value))) => children.push(compare_values(&child_path, None, Some(right_value))),
+            (None, None) => {}
+        }
+    }
+
+    aggregate_node(path, left_present, right_present, children)
+}
+
+fn build_key_index<'a>(
+    path: &str,
+    values: &'a [Value],
+    key_fn: BusinessKeyFn,
+) -> Result<BTreeMap<String, (usize, &'a Value)>, CompareError> {
+    let mut index = BTreeMap::new();
+    for (position, value) in values.iter().enumerate() {
+        let key = key_fn(value).unwrap_or_else(|| position.to_string());
+        if index.insert(key.clone(), (position, value)).is_some() {
+            return Err(CompareError::AmbiguousBusinessKey {
+                path: join_path("", path),
+                key,
+            });
+        }
+    }
+    Ok(index)
+}
+
+fn business_key_for_path(path: &str) -> Option<BusinessKeyFn> {
+    if path.ends_with("GroupItems") {
+        Some(|value| value.get("SequenceNo")?.as_str().map(str::to_owned))
+    } else if path.ends_with("Lines") {
+        Some(|value| {
+            let line_name = value.get("LineName")?.as_str()?;
+            let direction = value.get("Direction").and_then(|direction| direction.as_str());
+            match direction {
+                Some(direction) if !direction.is_empty() => Some(format!("{line_name}|{direction}")),
+                _ => Some(line_name.to_owned()),
+            }
+        })
+    } else if path.ends_with("RouteStops") {
+        Some(|value| {
+            let sequence = value.get("Sequence").and_then(|sequence| sequence.as_i64());
+            let name = value.get("Name").and_then(|name| name.as_str());
+            match (sequence, name) {
+                (Some(sequence), Some(name)) => Some(format!("{sequence}|{name}")),
+                (_, Some(name)) => Some(name.to_owned()),
+                _ => None,
+            }
+        })
+    } else {
+        None
     }
 }
 
@@ -146,10 +245,32 @@ fn error_node(path: &str, left: Option<&CompareError>, right: Option<&CompareErr
     }
 }
 
-fn aggregate_node(path: &str, left: Option<&Value>, right: Option<&Value>, children: Vec<DiffNode>) -> DiffNode {
-    let status = match (left, right) {
-        (None, Some(_)) => DiffStatus::Added,
-        (Some(_), None) => DiffStatus::Removed,
+fn compare_error_node(path: &str, error: CompareError) -> DiffNode {
+    DiffNode {
+        path: join_path("", path),
+        status: DiffStatus::Error,
+        left_value: None,
+        right_value: None,
+        summary: error.to_string(),
+        children: Vec::new(),
+    }
+}
+
+fn reorder_node(path: &str, left_pos: usize, right_pos: usize) -> DiffNode {
+    DiffNode {
+        path: format!("{path}.__order__"),
+        status: DiffStatus::Reordered,
+        left_value: Some(left_pos.to_string()),
+        right_value: Some(right_pos.to_string()),
+        summary: format!("{path} reordered: {left_pos} -> {right_pos}"),
+        children: Vec::new(),
+    }
+}
+
+fn aggregate_node(path: &str, left_present: bool, right_present: bool, children: Vec<DiffNode>) -> DiffNode {
+    let status = match (left_present, right_present) {
+        (false, true) => DiffStatus::Added,
+        (true, false) => DiffStatus::Removed,
         _ if children.iter().all(|child| child.status == DiffStatus::Unchanged) => DiffStatus::Unchanged,
         _ if children.iter().any(|child| child.status == DiffStatus::Error) => DiffStatus::Error,
         _ => DiffStatus::Modified,
@@ -187,6 +308,14 @@ fn join_index_path(parent: &str, index: usize) -> String {
     }
 }
 
+fn join_key_path(parent: &str, key: &str) -> String {
+    if parent.is_empty() {
+        format!("StopPlateMetadata[{key}]")
+    } else {
+        format!("{parent}[{key}]")
+    }
+}
+
 fn compact_json(value: Option<&Value>) -> Option<String> {
     value.and_then(|value| serde_json::to_string(value).ok())
 }
@@ -208,9 +337,25 @@ fn describe_change(path: &str, status: &DiffStatus) -> String {
     }
 }
 
+pub fn flatten_changes(node: &DiffNode) -> Vec<DiffNode> {
+    let mut changes = Vec::new();
+    collect_changes(node, &mut changes);
+    changes
+}
+
+fn collect_changes(node: &DiffNode, changes: &mut Vec<DiffNode>) {
+    if node.status != DiffStatus::Unchanged {
+        changes.push(node.clone());
+    }
+
+    for child in &node.children {
+        collect_changes(child, changes);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{compare_metadata, DiffStatus};
+    use super::{compare_metadata, flatten_changes, DiffStatus};
     use crate::error::CompareError;
     use crate::metadata::MetadataLoadResult;
     use serde_json::json;
@@ -402,6 +547,90 @@ mod tests {
                 || diff.summary.contains("missing StopPlate metadata"),
             "unexpected summary: {}",
             diff.summary
+        );
+    }
+
+    #[test]
+    fn matches_lines_by_line_name_and_direction() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "Lines": [
+                {"LineName": "B932", "Direction": "Terminal", "PriceDescription": "1"},
+                {"LineName": "M375", "Direction": "Downtown", "PriceDescription": "2"}
+            ]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "Lines": [
+                {"LineName": "M375", "Direction": "Downtown", "PriceDescription": "3"},
+                {"LineName": "B932", "Direction": "Terminal", "PriceDescription": "1"}
+            ]
+        }));
+
+        let diff = compare_metadata(&left, &right);
+        let lines = diff
+            .children
+            .iter()
+            .find(|node| node.path == "Lines")
+            .unwrap_or_else(|| panic!("missing diff child for Lines: {diff:#?}"));
+
+        assert!(
+            lines.children.iter().any(|node| node.status == DiffStatus::Reordered),
+            "expected a reorder node in Lines diff: {lines:#?}"
+        );
+        assert!(
+            lines.children.iter().any(|node| {
+                node.path.contains("M375") && node.status == DiffStatus::Modified
+            }),
+            "expected modified keyed line diff for M375: {lines:#?}"
+        );
+    }
+
+    #[test]
+    fn marks_added_route_stop_when_business_key_only_exists_on_right() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "Lines": [{"LineName": "B932", "Direction": "Terminal", "RouteStops": []}]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "Lines": [{
+                "LineName": "B932",
+                "Direction": "Terminal",
+                "RouteStops": [{"Sequence": 8, "Name": "CurrentStop"}]
+            }]
+        }));
+
+        let diff = compare_metadata(&left, &right);
+        let changes = flatten_changes(&diff);
+
+        assert!(
+            changes.iter().any(|node| {
+                node.path.contains("RouteStops[8|CurrentStop]") && node.status == DiffStatus::Added
+            }),
+            "expected added keyed route stop in flattened changes: {changes:#?}"
+        );
+    }
+
+    #[test]
+    fn creates_error_for_ambiguous_business_key() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "GroupItems": [
+                {"SequenceNo": "①", "LineNames": "B932"},
+                {"SequenceNo": "①", "LineNames": "M375"}
+            ]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({"GroupItems": []}));
+
+        let diff = compare_metadata(&left, &right);
+        let group_items = diff
+            .children
+            .iter()
+            .find(|node| node.path == "GroupItems")
+            .unwrap_or_else(|| panic!("missing diff child for GroupItems: {diff:#?}"));
+
+        assert!(
+            group_items
+                .children
+                .iter()
+                .any(|node| node.status == DiffStatus::Error),
+            "expected error node for ambiguous business key: {group_items:#?}"
         );
     }
 }
