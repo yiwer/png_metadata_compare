@@ -53,7 +53,7 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
                 .map(|key| compare_values(&join_path(path, &key), left_map.get(&key), right_map.get(&key)))
                 .collect();
 
-            aggregate_node(path, children)
+            aggregate_node(path, left, right, children)
         }
         (None, Some(Value::Object(right_map))) => {
             let children = right_map
@@ -61,7 +61,7 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
                 .map(|(key, value)| compare_values(&join_path(path, key), None, Some(value)))
                 .collect();
 
-            aggregate_node(path, children)
+            aggregate_node(path, left, right, children)
         }
         (Some(Value::Object(left_map)), None) => {
             let children = left_map
@@ -69,7 +69,7 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
                 .map(|(key, value)| compare_values(&join_path(path, key), Some(value), None))
                 .collect();
 
-            aggregate_node(path, children)
+            aggregate_node(path, left, right, children)
         }
         (Some(Value::Array(left_items)), Some(Value::Array(right_items))) => {
             let max_len = left_items.len().max(right_items.len());
@@ -83,7 +83,7 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
                 })
                 .collect();
 
-            aggregate_node(path, children)
+            aggregate_node(path, left, right, children)
         }
         (None, Some(Value::Array(right_items))) => {
             let children = right_items
@@ -92,7 +92,7 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
                 .map(|(index, value)| compare_values(&join_index_path(path, index), None, Some(value)))
                 .collect();
 
-            aggregate_node(path, children)
+            aggregate_node(path, left, right, children)
         }
         (Some(Value::Array(left_items)), None) => {
             let children = left_items
@@ -101,7 +101,7 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
                 .map(|(index, value)| compare_values(&join_index_path(path, index), Some(value), None))
                 .collect();
 
-            aggregate_node(path, children)
+            aggregate_node(path, left, right, children)
         }
         _ => {
             let status = match (left, right) {
@@ -146,13 +146,13 @@ fn error_node(path: &str, left: Option<&CompareError>, right: Option<&CompareErr
     }
 }
 
-fn aggregate_node(path: &str, children: Vec<DiffNode>) -> DiffNode {
-    let status = if children.iter().all(|child| child.status == DiffStatus::Unchanged) {
-        DiffStatus::Unchanged
-    } else if children.iter().any(|child| child.status == DiffStatus::Error) {
-        DiffStatus::Error
-    } else {
-        DiffStatus::Modified
+fn aggregate_node(path: &str, left: Option<&Value>, right: Option<&Value>, children: Vec<DiffNode>) -> DiffNode {
+    let status = match (left, right) {
+        (None, Some(_)) => DiffStatus::Added,
+        (Some(_), None) => DiffStatus::Removed,
+        _ if children.iter().all(|child| child.status == DiffStatus::Unchanged) => DiffStatus::Unchanged,
+        _ if children.iter().any(|child| child.status == DiffStatus::Error) => DiffStatus::Error,
+        _ => DiffStatus::Modified,
     };
 
     DiffNode {
@@ -265,7 +265,7 @@ mod tests {
             .find(|node| node.path == "items")
             .unwrap_or_else(|| panic!("missing diff child for items: {diff:#?}"));
 
-        assert_eq!(items.status, DiffStatus::Modified);
+        assert_eq!(items.status, DiffStatus::Added);
         assert!(items.left_value.is_none());
         assert!(items.right_value.is_none());
 
@@ -275,7 +275,7 @@ mod tests {
             .find(|node| node.path == "items[0]")
             .unwrap_or_else(|| panic!("missing diff child for items[0]: {items:#?}"));
 
-        assert_eq!(index_node.status, DiffStatus::Modified);
+        assert_eq!(index_node.status, DiffStatus::Added);
 
         let leaf = index_node
             .children
@@ -286,6 +286,75 @@ mod tests {
         assert_eq!(leaf.status, DiffStatus::Added);
         assert_eq!(leaf.left_value, None);
         assert_eq!(leaf.right_value.as_deref(), Some("\"alpha\""));
+    }
+
+    #[test]
+    fn preserves_removed_compound_parent_status() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "items": [
+                {"name": "alpha"}
+            ]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({}));
+
+        let diff = compare_metadata(&left, &right);
+        let items = diff
+            .children
+            .iter()
+            .find(|node| node.path == "items")
+            .unwrap_or_else(|| panic!("missing diff child for items: {diff:#?}"));
+
+        assert_eq!(items.status, DiffStatus::Removed);
+
+        let index_node = items
+            .children
+            .iter()
+            .find(|node| node.path == "items[0]")
+            .unwrap_or_else(|| panic!("missing diff child for items[0]: {items:#?}"));
+
+        assert_eq!(index_node.status, DiffStatus::Removed);
+    }
+
+    #[test]
+    fn preserves_empty_added_and_removed_compound_parent_statuses() {
+        let added = compare_metadata(
+            &MetadataLoadResult::Parsed(json!({})),
+            &MetadataLoadResult::Parsed(json!({"emptyObject": {}, "emptyArray": []})),
+        );
+        let removed = compare_metadata(
+            &MetadataLoadResult::Parsed(json!({"emptyObject": {}, "emptyArray": []})),
+            &MetadataLoadResult::Parsed(json!({})),
+        );
+
+        let added_object = added
+            .children
+            .iter()
+            .find(|node| node.path == "emptyObject")
+            .unwrap_or_else(|| panic!("missing diff child for emptyObject: {added:#?}"));
+        let added_array = added
+            .children
+            .iter()
+            .find(|node| node.path == "emptyArray")
+            .unwrap_or_else(|| panic!("missing diff child for emptyArray: {added:#?}"));
+        let removed_object = removed
+            .children
+            .iter()
+            .find(|node| node.path == "emptyObject")
+            .unwrap_or_else(|| panic!("missing diff child for emptyObject: {removed:#?}"));
+        let removed_array = removed
+            .children
+            .iter()
+            .find(|node| node.path == "emptyArray")
+            .unwrap_or_else(|| panic!("missing diff child for emptyArray: {removed:#?}"));
+
+        assert_eq!(added_object.status, DiffStatus::Added);
+        assert_eq!(added_array.status, DiffStatus::Added);
+        assert_eq!(removed_object.status, DiffStatus::Removed);
+        assert_eq!(removed_array.status, DiffStatus::Removed);
+        assert!(added_object.children.is_empty());
+        assert!(added_array.children.is_empty());
+        assert!(removed_object.children.is_empty());
+        assert!(removed_array.children.is_empty());
     }
 
     #[test]
