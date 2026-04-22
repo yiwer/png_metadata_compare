@@ -28,6 +28,7 @@ type BusinessKeyFn = fn(&Value) -> Option<String>;
 
 struct KeyedArrayIndex<'a> {
     items: BTreeMap<String, (usize, &'a Value)>,
+    blocked_keys: BTreeSet<String>,
     errors: Vec<DiffNode>,
 }
 
@@ -136,12 +137,17 @@ fn compare_keyed_array(
     let mut children = Vec::new();
     children.extend(left_index.errors);
     children.extend(right_index.errors);
+    let mut blocked_keys = left_index.blocked_keys;
+    blocked_keys.extend(right_index.blocked_keys);
 
     let mut keys = BTreeSet::new();
     keys.extend(left_index.items.keys().cloned());
     keys.extend(right_index.items.keys().cloned());
 
     for key in keys {
+        if blocked_keys.contains(&key) {
+            continue;
+        }
         let child_path = join_key_path(path, &key);
         match (left_index.items.get(&key), right_index.items.get(&key)) {
             (Some((left_pos, left_value)), Some((right_pos, right_value))) => {
@@ -167,7 +173,7 @@ fn build_key_index<'a>(
 ) -> KeyedArrayIndex<'a> {
     let mut items = BTreeMap::new();
     let mut errors = Vec::new();
-    let mut ambiguous_keys = BTreeSet::new();
+    let mut blocked_keys = BTreeSet::new();
 
     for (position, value) in values.iter().enumerate() {
         let Some(key) = key_fn(value) else {
@@ -180,13 +186,13 @@ fn build_key_index<'a>(
             continue;
         };
 
-        if ambiguous_keys.contains(&key) {
+        if blocked_keys.contains(&key) {
             continue;
         }
 
         if items.insert(key.clone(), (position, value)).is_some() {
             items.remove(&key);
-            ambiguous_keys.insert(key.clone());
+            blocked_keys.insert(key.clone());
             errors.push(compare_error_node(
                 &format!("{path}.__error__.{side}[{key}]"),
                 CompareError::AmbiguousBusinessKey {
@@ -197,7 +203,11 @@ fn build_key_index<'a>(
         }
     }
 
-    KeyedArrayIndex { items, errors }
+    KeyedArrayIndex {
+        items,
+        blocked_keys,
+        errors,
+    }
 }
 
 fn business_key_for_path(path: &str) -> Option<BusinessKeyFn> {
@@ -757,6 +767,42 @@ mod tests {
         assert!(
             changes.iter().any(|node| node.path == "Lines[M375|Downtown].PriceDescription"),
             "expected leaf change in flattened list: {changes:#?}"
+        );
+    }
+
+    #[test]
+    fn suppresses_false_inventory_diffs_for_ambiguous_business_keys() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "GroupItems": [
+                {"SequenceNo": "①", "LineNames": "B932"},
+                {"SequenceNo": "①", "LineNames": "M375"}
+            ]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "GroupItems": [
+                {"SequenceNo": "①", "LineNames": "B932"}
+            ]
+        }));
+
+        let diff = compare_metadata(&left, &right);
+        let group_items = diff
+            .children
+            .iter()
+            .find(|node| node.path == "GroupItems")
+            .unwrap_or_else(|| panic!("missing diff child for GroupItems: {diff:#?}"));
+
+        assert!(
+            group_items.children.iter().any(|node| {
+                node.status == DiffStatus::Error && node.summary.contains('①')
+            }),
+            "expected ambiguity error node for duplicate key: {group_items:#?}"
+        );
+        assert!(
+            group_items.children.iter().all(|node| {
+                !(node.path.contains("GroupItems[①]")
+                    && matches!(node.status, DiffStatus::Added | DiffStatus::Removed))
+            }),
+            "ambiguous keys must not also emit added/removed nodes: {group_items:#?}"
         );
     }
 }
