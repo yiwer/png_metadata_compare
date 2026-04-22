@@ -1,4 +1,9 @@
+use crate::batch_report::{
+    BatchCompareReport, BatchIssue, MatchedPairCompareResult, UnmatchedSide, build_batch_results,
+};
+use crate::batch_scan::{build_pairing, scan_png_files};
 use crate::diff::{DiffNode, DiffSummary, compare_metadata, flatten_changes, summarize_changes};
+use crate::error::CompareError;
 use crate::metadata::load_metadata;
 use crate::png_reader::extract_stop_plate_metadata_from_file;
 use crate::ui::{detail, summary, tree};
@@ -13,10 +18,30 @@ pub struct CompareResultView {
     pub selected_path: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AppMode {
+    #[default]
+    SingleFile,
+    Directory,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatchSelection {
+    Identical(usize),
+    Different(usize),
+    LeftOnly(usize),
+    RightOnly(usize),
+}
+
 pub struct PngMetadataCompareApp {
     pub left_path: Option<String>,
     pub right_path: Option<String>,
+    pub left_dir: Option<String>,
+    pub right_dir: Option<String>,
     pub result: Option<CompareResultView>,
+    pub batch_report: Option<BatchCompareReport>,
+    pub batch_selection: Option<BatchSelection>,
+    pub mode: AppMode,
     pub filters: tree::TreeFilters,
 }
 
@@ -25,7 +50,12 @@ impl Default for PngMetadataCompareApp {
         Self {
             left_path: None,
             right_path: None,
+            left_dir: None,
+            right_dir: None,
             result: None,
+            batch_report: None,
+            batch_selection: None,
+            mode: AppMode::SingleFile,
             filters: tree::TreeFilters::default(),
         }
     }
@@ -33,7 +63,10 @@ impl Default for PngMetadataCompareApp {
 
 impl PngMetadataCompareApp {
     pub fn can_compare(&self) -> bool {
-        self.left_path.is_some() && self.right_path.is_some()
+        match self.mode {
+            AppMode::SingleFile => self.left_path.is_some() && self.right_path.is_some(),
+            AppMode::Directory => self.left_dir.is_some() && self.right_dir.is_some(),
+        }
     }
 
     fn reconcile_tree_selection(&mut self) {
@@ -47,24 +80,51 @@ impl PngMetadataCompareApp {
             (self.left_path.as_deref(), self.right_path.as_deref())
         else {
             self.result = None;
+            self.batch_report = None;
+            self.batch_selection = None;
             return;
         };
 
-        let left_metadata =
-            load_metadata(extract_stop_plate_metadata_from_file(Path::new(left_path)));
-        let right_metadata =
-            load_metadata(extract_stop_plate_metadata_from_file(Path::new(right_path)));
-        let root = compare_metadata(&left_metadata, &right_metadata);
-        let change_list = flatten_changes(&root);
-        let summary = summarize_changes(&change_list);
-        let selected_path = default_selected_path(&change_list);
+        self.result = Some(compare_paths(Path::new(left_path), Path::new(right_path)));
+        self.batch_report = None;
+        self.batch_selection = None;
+    }
 
-        self.result = Some(CompareResultView {
-            root,
-            change_list,
-            summary,
-            selected_path,
-        });
+    pub fn run_directory_compare(&mut self) {
+        let (Some(left_dir), Some(right_dir)) =
+            (self.left_dir.as_deref(), self.right_dir.as_deref())
+        else {
+            self.result = None;
+            self.batch_report = None;
+            self.batch_selection = None;
+            return;
+        };
+
+        let mut issues = Vec::new();
+        let left_files = scan_directory_side(Path::new(left_dir), UnmatchedSide::Left, &mut issues);
+        let right_files =
+            scan_directory_side(Path::new(right_dir), UnmatchedSide::Right, &mut issues);
+        let pairing = build_pairing(&left_files, &right_files);
+        let matched_results = pairing
+            .matched
+            .into_iter()
+            .map(compare_matched_pair)
+            .collect();
+
+        let mut batch_report = build_batch_results(
+            matched_results,
+            pairing.left_only,
+            pairing.right_only,
+            issues,
+        );
+
+        for different in &mut batch_report.different {
+            different.selected_path = default_selected_path(&different.change_list);
+        }
+
+        self.result = None;
+        self.batch_selection = default_batch_selection(&batch_report);
+        self.batch_report = Some(batch_report);
     }
 
     fn render_scaffold(&mut self, ctx: &eframe::egui::Context) {
@@ -225,6 +285,73 @@ fn central_panel_state(
         empty_message: None,
         show_no_differences_message: false,
         show_tree: true,
+    }
+}
+
+fn compare_paths(left_path: &Path, right_path: &Path) -> CompareResultView {
+    let left_metadata = load_metadata(extract_stop_plate_metadata_from_file(left_path));
+    let right_metadata = load_metadata(extract_stop_plate_metadata_from_file(right_path));
+    let root = compare_metadata(&left_metadata, &right_metadata);
+    let change_list = flatten_changes(&root);
+    let summary = summarize_changes(&change_list);
+    let selected_path = default_selected_path(&change_list);
+
+    CompareResultView {
+        root,
+        change_list,
+        summary,
+        selected_path,
+    }
+}
+
+fn scan_directory_side(
+    directory: &Path,
+    side: UnmatchedSide,
+    issues: &mut Vec<BatchIssue>,
+) -> Vec<crate::batch_scan::BatchFileRecord> {
+    match scan_png_files(directory) {
+        Ok(files) => files,
+        Err(error) => {
+            let (path, reason) = scan_failure_details(directory, &error);
+            issues.push(BatchIssue::ScanFailure { side, path, reason });
+            Vec::new()
+        }
+    }
+}
+
+fn scan_failure_details(directory: &Path, error: &CompareError) -> (std::path::PathBuf, String) {
+    match error {
+        CompareError::FileRead { path, reason } => (path.clone(), reason.clone()),
+        _ => (directory.to_path_buf(), error.to_string()),
+    }
+}
+
+fn compare_matched_pair(pair: crate::batch_report::MatchedPair) -> MatchedPairCompareResult {
+    let compare_result = compare_paths(&pair.left.absolute_path, &pair.right.absolute_path);
+
+    if compare_result.summary.total() == 0 {
+        MatchedPairCompareResult::identical(pair)
+    } else {
+        MatchedPairCompareResult::different(
+            pair,
+            compare_result.root,
+            compare_result.change_list,
+            compare_result.summary,
+        )
+    }
+}
+
+fn default_batch_selection(report: &BatchCompareReport) -> Option<BatchSelection> {
+    if !report.different.is_empty() {
+        Some(BatchSelection::Different(0))
+    } else if !report.identical.is_empty() {
+        Some(BatchSelection::Identical(0))
+    } else if !report.left_only.is_empty() {
+        Some(BatchSelection::LeftOnly(0))
+    } else if !report.right_only.is_empty() {
+        Some(BatchSelection::RightOnly(0))
+    } else {
+        None
     }
 }
 
@@ -414,8 +541,102 @@ fn run_compare_pipeline_builds_diff_and_counts_impl() {
 }
 
 #[cfg(test)]
+mod test_support {
+    use super::png_chunk_crc;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    pub(crate) struct BatchDirFixture {
+        root: PathBuf,
+        left: PathBuf,
+        right: PathBuf,
+    }
+
+    impl BatchDirFixture {
+        pub(crate) fn new(label: &str) -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after epoch")
+                .as_nanos();
+            let root = std::env::temp_dir().join(format!(
+                "png_metadata_compare_batch_fixture_{label}_{}_{}",
+                std::process::id(),
+                unique
+            ));
+            let left = root.join("left");
+            let right = root.join("right");
+            fs::create_dir_all(&left).expect("left test directory should be created");
+            fs::create_dir_all(&right).expect("right test directory should be created");
+            Self { root, left, right }
+        }
+
+        pub(crate) fn left_dir(&self) -> &Path {
+            &self.left
+        }
+
+        pub(crate) fn right_dir(&self) -> &Path {
+            &self.right
+        }
+
+        pub(crate) fn write_left_png(&self, relative: &str, metadata_json: &str) {
+            self.write_png(&self.left, relative, metadata_json);
+        }
+
+        pub(crate) fn write_right_png(&self, relative: &str, metadata_json: &str) {
+            self.write_png(&self.right, relative, metadata_json);
+        }
+
+        fn write_png(&self, base_dir: &Path, relative: &str, metadata_json: &str) {
+            let path = base_dir.join(relative);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("fixture parent directory should be created");
+            }
+            fs::write(&path, png_with_stop_plate_metadata(metadata_json))
+                .expect("fixture PNG should be written");
+        }
+    }
+
+    impl Drop for BatchDirFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn png_with_stop_plate_metadata(json: &str) -> Vec<u8> {
+        let mut bytes = Vec::from(b"\x89PNG\r\n\x1a\n".as_slice());
+        bytes.extend(png_chunk(*b"iTXt", stop_plate_itxt_data(json)));
+        bytes.extend(png_chunk(*b"IEND", Vec::new()));
+        bytes
+    }
+
+    fn stop_plate_itxt_data(json: &str) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"StopPlateMetadata");
+        data.push(0);
+        data.push(0);
+        data.push(0);
+        data.push(0);
+        data.push(0);
+        data.extend_from_slice(json.as_bytes());
+        data
+    }
+
+    fn png_chunk(kind: [u8; 4], data: Vec<u8>) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(&kind);
+        bytes.extend_from_slice(&data);
+        bytes.extend_from_slice(&png_chunk_crc(kind, &data).to_be_bytes());
+        bytes
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::PngMetadataCompareApp;
+    use super::test_support::BatchDirFixture;
+    use crate::batch_report::UnmatchedSide;
     use crate::diff::{DiffNode, DiffStatus};
     use crate::ui::tree::TreeFilters;
 
@@ -445,6 +666,119 @@ mod tests {
     #[test]
     fn compare_pipeline_builds_diff_and_counts() {
         super::run_compare_pipeline_builds_diff_and_counts_impl();
+    }
+
+    #[test]
+    fn directory_mode_classifies_identical_and_different_pairs() {
+        let fixture = BatchDirFixture::new("matched_pairs");
+        fixture.write_left_png("same.png", r#"{"Title":"Same"}"#);
+        fixture.write_right_png("same.png", r#"{"Title":"Same"}"#);
+        fixture.write_left_png("changed.png", r#"{"Title":"Left"}"#);
+        fixture.write_right_png("changed.png", r#"{"Title":"Right"}"#);
+
+        let mut app = PngMetadataCompareApp {
+            left_dir: Some(fixture.left_dir().display().to_string()),
+            right_dir: Some(fixture.right_dir().display().to_string()),
+            mode: super::AppMode::Directory,
+            ..Default::default()
+        };
+
+        app.run_directory_compare();
+
+        let report = app
+            .batch_report
+            .as_ref()
+            .expect("directory compare should store a batch report");
+        assert!(report.issues.is_empty());
+        assert_eq!(report.identical.len(), 1);
+        assert_eq!(report.identical[0].pair.file_name, "same.png");
+        assert_eq!(report.different.len(), 1);
+        assert_eq!(report.different[0].pair.file_name, "changed.png");
+        assert_eq!(report.different[0].diff_root.path, "StopPlateMetadata");
+        assert_eq!(report.different[0].diff_root.status, DiffStatus::Modified);
+        assert!(
+            report.different[0]
+                .change_list
+                .iter()
+                .any(|node| node.path == "Title" && node.status == DiffStatus::Modified),
+            "expected changed metadata leaf in flattened batch diff: {:#?}",
+            report.different[0].change_list
+        );
+        assert_eq!(
+            app.batch_selection,
+            Some(super::BatchSelection::Different(0))
+        );
+    }
+
+    #[test]
+    fn directory_mode_reports_unmatched_files_in_left_only_and_right_only() {
+        let fixture = BatchDirFixture::new("unmatched_pairs");
+        fixture.write_left_png("left-only.png", r#"{"Title":"Left only"}"#);
+        fixture.write_right_png("right-only.png", r#"{"Title":"Right only"}"#);
+
+        let mut app = PngMetadataCompareApp {
+            left_dir: Some(fixture.left_dir().display().to_string()),
+            right_dir: Some(fixture.right_dir().display().to_string()),
+            mode: super::AppMode::Directory,
+            ..Default::default()
+        };
+
+        app.run_directory_compare();
+
+        let report = app
+            .batch_report
+            .as_ref()
+            .expect("directory compare should store a batch report");
+        assert!(report.issues.is_empty());
+        assert!(report.identical.is_empty());
+        assert!(report.different.is_empty());
+        assert_eq!(report.left_only.len(), 1);
+        assert_eq!(report.left_only[0].file.file_name, "left-only.png");
+        assert_eq!(report.left_only[0].side, UnmatchedSide::Left);
+        assert_eq!(report.right_only.len(), 1);
+        assert_eq!(report.right_only[0].file.file_name, "right-only.png");
+        assert_eq!(report.right_only[0].side, UnmatchedSide::Right);
+        assert_eq!(
+            app.batch_selection,
+            Some(super::BatchSelection::LeftOnly(0))
+        );
+    }
+
+    #[test]
+    fn directory_mode_records_scan_failures_as_batch_issues() {
+        use crate::batch_report::BatchIssue;
+        use std::fs;
+
+        let fixture = BatchDirFixture::new("scan_failures");
+        let invalid_right_path = fixture.right_dir().join("not-a-directory.png");
+        fs::write(&invalid_right_path, b"test").expect("invalid scan target file should exist");
+
+        let mut app = PngMetadataCompareApp {
+            left_dir: Some(fixture.left_dir().display().to_string()),
+            right_dir: Some(invalid_right_path.display().to_string()),
+            mode: super::AppMode::Directory,
+            ..Default::default()
+        };
+
+        app.run_directory_compare();
+
+        let report = app
+            .batch_report
+            .as_ref()
+            .expect("directory compare should still produce a batch report on scan failure");
+        assert_eq!(report.issues.len(), 1);
+        match &report.issues[0] {
+            BatchIssue::ScanFailure { side, path, reason } => {
+                assert_eq!(*side, UnmatchedSide::Right);
+                assert_eq!(path, &invalid_right_path);
+                assert!(!reason.is_empty());
+            }
+        }
+        assert!(report.identical.is_empty());
+        assert!(report.different.is_empty());
+        assert!(report.left_only.is_empty());
+        assert!(report.right_only.is_empty());
+        assert_eq!(app.batch_selection, None);
     }
 
     #[test]
