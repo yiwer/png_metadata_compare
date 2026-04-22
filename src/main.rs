@@ -33,3 +33,9 @@ fn compare_is_disabled_until_both_paths_are_present() {
     app.right_path = Some("right.png".into());
     assert!(app.can_compare());
 }
+
+#[cfg(test)]
+#[test]
+fn compare_pipeline_builds_diff_and_counts() {
+    app::run_compare_pipeline_builds_diff_and_counts_test();
+}
