@@ -1,8 +1,9 @@
 use crate::batch_report::{
-    BatchCompareReport, BatchIssue, MatchedPairCompareResult, UnmatchedSide, build_batch_results,
+    build_batch_results, BatchCompareReport, BatchIssue, DifferentPairResult,
+    MatchedPairCompareResult, UnmatchedSide,
 };
 use crate::batch_scan::{build_pairing, scan_png_files};
-use crate::diff::{DiffNode, DiffSummary, compare_metadata, flatten_changes, summarize_changes};
+use crate::diff::{compare_metadata, flatten_changes, summarize_changes, DiffNode, DiffSummary};
 use crate::error::CompareError;
 use crate::metadata::load_metadata;
 use crate::png_reader::extract_stop_plate_metadata_from_file;
@@ -16,6 +17,52 @@ pub struct CompareResultView {
     pub change_list: Vec<DiffNode>,
     pub summary: DiffSummary,
     pub selected_path: Option<String>,
+}
+
+enum ActiveTreeResult<'a> {
+    Single(&'a CompareResultView),
+    BatchDifferent(&'a DifferentPairResult),
+}
+
+impl<'a> ActiveTreeResult<'a> {
+    fn root(&self) -> &'a DiffNode {
+        match self {
+            Self::Single(result) => &result.root,
+            Self::BatchDifferent(result) => &result.diff_root,
+        }
+    }
+
+    fn summary(&self) -> &'a DiffSummary {
+        match self {
+            Self::Single(result) => &result.summary,
+            Self::BatchDifferent(result) => &result.summary,
+        }
+    }
+
+    fn selected_path(&self) -> Option<&'a str> {
+        match self {
+            Self::Single(result) => result.selected_path.as_deref(),
+            Self::BatchDifferent(result) => result.selected_path.as_deref(),
+        }
+    }
+}
+
+enum ActiveTreeResultMut<'a> {
+    Single(&'a mut CompareResultView),
+    BatchDifferent(&'a mut DifferentPairResult),
+}
+
+impl<'a> ActiveTreeResultMut<'a> {
+    fn into_parts(self) -> (&'a DiffNode, &'a DiffSummary, &'a mut Option<String>) {
+        match self {
+            Self::Single(result) => (&result.root, &result.summary, &mut result.selected_path),
+            Self::BatchDifferent(result) => (
+                &result.diff_root,
+                &result.summary,
+                &mut result.selected_path,
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -110,9 +157,60 @@ impl PngMetadataCompareApp {
         self.clear_outputs();
     }
 
+    fn selected_batch_different(&self) -> Option<&DifferentPairResult> {
+        let report = self.batch_report.as_ref()?;
+        let BatchSelection::Different(index) = self.batch_selection? else {
+            return None;
+        };
+
+        report.different.get(index)
+    }
+
+    fn selected_batch_different_mut(&mut self) -> Option<&mut DifferentPairResult> {
+        let report = self.batch_report.as_mut()?;
+        let BatchSelection::Different(index) = self.batch_selection? else {
+            return None;
+        };
+
+        report.different.get_mut(index)
+    }
+
+    fn active_tree_result(&self) -> Option<ActiveTreeResult<'_>> {
+        match self.mode {
+            AppMode::SingleFile => self.result.as_ref().map(ActiveTreeResult::Single),
+            AppMode::Directory => self
+                .selected_batch_different()
+                .map(ActiveTreeResult::BatchDifferent),
+        }
+    }
+
+    fn active_tree_result_mut(&mut self) -> Option<ActiveTreeResultMut<'_>> {
+        match self.mode {
+            AppMode::SingleFile => self.result.as_mut().map(ActiveTreeResultMut::Single),
+            AppMode::Directory => self
+                .selected_batch_different_mut()
+                .map(ActiveTreeResultMut::BatchDifferent),
+        }
+    }
+
     fn reconcile_tree_selection(&mut self) {
-        if let Some(result) = self.result.as_mut() {
-            tree::reconcile_selected_path(result, &self.filters);
+        let filters = self.filters.clone();
+
+        match self.mode {
+            AppMode::SingleFile => {
+                if let Some(result) = self.result.as_mut() {
+                    tree::reconcile_selected_path(result, &filters);
+                }
+            }
+            AppMode::Directory => {
+                if let Some(different) = self.selected_batch_different_mut() {
+                    tree::reconcile_selected_path_for(
+                        &different.diff_root,
+                        &mut different.selected_path,
+                        &filters,
+                    );
+                }
+            }
         }
     }
 
@@ -183,40 +281,83 @@ impl PngMetadataCompareApp {
         eframe::egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.heading("PNG Metadata Compare");
             ui.separator();
+            ui.horizontal(|ui| {
+                ui.label("Mode");
+                ui.selectable_value(&mut self.mode, AppMode::SingleFile, "Single File");
+                ui.selectable_value(&mut self.mode, AppMode::Directory, "Directory");
+            });
+            ui.separator();
             ui.horizontal_wrapped(|ui| {
-                if ui.button("Choose left PNG").clicked() {
-                    if let Some(path) = FileDialog::new()
-                        .add_filter("PNG image", &["png"])
-                        .pick_file()
-                    {
-                        self.set_left_file_path(path.display().to_string());
-                    }
-                }
-                ui.label(
-                    self.left_path
-                        .as_deref()
-                        .unwrap_or("Left file not selected"),
-                );
+                match self.mode {
+                    AppMode::SingleFile => {
+                        if ui.button("Choose left PNG").clicked() {
+                            if let Some(path) = FileDialog::new()
+                                .add_filter("PNG image", &["png"])
+                                .pick_file()
+                            {
+                                self.set_left_file_path(path.display().to_string());
+                            }
+                        }
+                        ui.label(
+                            self.left_path
+                                .as_deref()
+                                .unwrap_or("Left file not selected"),
+                        );
 
-                if ui.button("Choose right PNG").clicked() {
-                    if let Some(path) = FileDialog::new()
-                        .add_filter("PNG image", &["png"])
-                        .pick_file()
-                    {
-                        self.set_right_file_path(path.display().to_string());
-                    }
-                }
-                ui.label(
-                    self.right_path
-                        .as_deref()
-                        .unwrap_or("Right file not selected"),
-                );
+                        if ui.button("Choose right PNG").clicked() {
+                            if let Some(path) = FileDialog::new()
+                                .add_filter("PNG image", &["png"])
+                                .pick_file()
+                            {
+                                self.set_right_file_path(path.display().to_string());
+                            }
+                        }
+                        ui.label(
+                            self.right_path
+                                .as_deref()
+                                .unwrap_or("Right file not selected"),
+                        );
 
-                if ui
-                    .add_enabled(self.can_compare(), eframe::egui::Button::new("Compare"))
-                    .clicked()
-                {
-                    self.run_active_compare();
+                        if ui
+                            .add_enabled(self.can_compare(), eframe::egui::Button::new("Compare"))
+                            .clicked()
+                        {
+                            self.run_active_compare();
+                        }
+                    }
+                    AppMode::Directory => {
+                        if ui.button("Choose left directory").clicked() {
+                            if let Some(path) = FileDialog::new().pick_folder() {
+                                self.set_left_dir_path(path.display().to_string());
+                            }
+                        }
+                        ui.label(
+                            self.left_dir
+                                .as_deref()
+                                .unwrap_or("Left directory not selected"),
+                        );
+
+                        if ui.button("Choose right directory").clicked() {
+                            if let Some(path) = FileDialog::new().pick_folder() {
+                                self.set_right_dir_path(path.display().to_string());
+                            }
+                        }
+                        ui.label(
+                            self.right_dir
+                                .as_deref()
+                                .unwrap_or("Right directory not selected"),
+                        );
+
+                        if ui
+                            .add_enabled(
+                                self.can_compare(),
+                                eframe::egui::Button::new("Compare Directories"),
+                            )
+                            .clicked()
+                        {
+                            self.run_active_compare();
+                        }
+                    }
                 }
 
                 if ui
@@ -235,10 +376,21 @@ impl PngMetadataCompareApp {
             ui.heading("Summary");
             ui.separator();
 
-            if let Some(result) = self.result.as_mut() {
-                summary::draw_summary(ui, result);
-            } else {
-                ui.label("Choose two PNG files and run compare to view the summary.");
+            match self.mode {
+                AppMode::SingleFile => {
+                    if let Some(result) = self.result.as_mut() {
+                        summary::draw_summary(ui, result);
+                    } else {
+                        ui.label("Choose two PNG files and run compare to view the summary.");
+                    }
+                }
+                AppMode::Directory => {
+                    if let Some(report) = self.batch_report.as_ref() {
+                        summary::draw_batch_summary(ui, report, &mut self.batch_selection);
+                    } else {
+                        ui.label("Choose two directories and run compare to view the summary.");
+                    }
+                }
             }
         });
 
@@ -247,57 +399,121 @@ impl PngMetadataCompareApp {
             .show(ctx, |ui| {
                 ui.heading("Details");
                 ui.separator();
-                detail::draw_detail(ui, self.result.as_ref());
+                match self.mode {
+                    AppMode::SingleFile => detail::draw_detail(ui, self.result.as_ref()),
+                    AppMode::Directory => detail::draw_batch_detail(
+                        ui,
+                        self.batch_report.as_ref(),
+                        self.batch_selection,
+                    ),
+                }
             });
 
         eframe::egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Diff Tree");
             ui.separator();
-            let state = central_panel_state(self.result.as_ref(), &self.filters);
-            if let Some(message) = state.empty_message {
-                ui.label(message);
-                return;
-            }
-
-            let mut filters_changed = false;
-            ui.horizontal_wrapped(|ui| {
-                filters_changed |= ui
-                    .checkbox(&mut self.filters.only_differences, "Only differences")
-                    .changed();
-                filters_changed |= ui
-                    .checkbox(&mut self.filters.show_reordered, "Show reordered")
-                    .changed();
-                filters_changed |= ui
-                    .checkbox(&mut self.filters.show_unchanged, "Show unchanged")
-                    .changed();
-                filters_changed |= ui
-                    .checkbox(&mut self.filters.show_errors, "Show errors")
-                    .changed();
-            });
-
-            if filters_changed {
-                self.reconcile_tree_selection();
-            }
-            ui.separator();
-
-            let Some(result) = self.result.as_mut() else {
-                ui.label("Run compare to populate the diff tree.");
-                return;
-            };
-
-            let state = central_panel_state(Some(&*result), &self.filters);
-            if state.show_no_differences_message {
-                ui.label("No differences found between the selected PNG metadata.");
-            }
-
-            if state.show_tree && state.show_no_differences_message {
-                ui.separator();
-            }
-
-            if state.show_tree {
-                tree::draw_tree(ui, result, &self.filters);
+            match self.mode {
+                AppMode::SingleFile => {
+                    self.render_active_diff_tree(
+                        ui,
+                        "Run compare to populate the diff tree.",
+                        "No differences found between the selected PNG metadata.",
+                    );
+                }
+                AppMode::Directory => match self.batch_selection {
+                    Some(BatchSelection::Different(_)) => self.render_active_diff_tree(
+                        ui,
+                        "Run directory compare to populate the diff tree.",
+                        "No differences found between the selected PNG metadata.",
+                    ),
+                    Some(BatchSelection::Identical(_))
+                    | Some(BatchSelection::LeftOnly(_))
+                    | Some(BatchSelection::RightOnly(_)) => {
+                        if self.batch_report.is_none() {
+                            ui.label("Run directory compare to populate the diff tree.");
+                        } else {
+                            ui.label("No diff tree for this item type.");
+                        }
+                    }
+                    None => {
+                        if self.batch_report.is_none() {
+                            ui.label("Run directory compare to populate the diff tree.");
+                        } else {
+                            ui.label("Select a batch item to inspect its diff tree.");
+                        }
+                    }
+                },
             }
         });
+    }
+
+    fn render_active_diff_tree(
+        &mut self,
+        ui: &mut eframe::egui::Ui,
+        empty_message: &'static str,
+        no_differences_message: &'static str,
+    ) {
+        let state = central_panel_state_parts(
+            self.active_tree_result().map(|result| result.root()),
+            self.active_tree_result().map(|result| result.summary()),
+            &self.filters,
+            empty_message,
+        );
+        if let Some(message) = state.empty_message {
+            ui.label(message);
+            return;
+        }
+
+        if draw_tree_filter_controls(ui, &mut self.filters) {
+            self.reconcile_tree_selection();
+        }
+        ui.separator();
+        let filters = self.filters.clone();
+
+        match self.mode {
+            AppMode::SingleFile => {
+                let Some(result) = self.result.as_mut() else {
+                    ui.label("Run compare to populate the diff tree.");
+                    return;
+                };
+                let state = central_panel_state(Some(&*result), &filters);
+                if state.show_no_differences_message {
+                    ui.label(no_differences_message);
+                }
+
+                if state.show_tree && state.show_no_differences_message {
+                    ui.separator();
+                }
+
+                if !state.show_tree {
+                    return;
+                }
+
+                tree::draw_tree(ui, result, &filters);
+            }
+            AppMode::Directory => {
+                let Some(active_result) = self.active_tree_result_mut() else {
+                    ui.label("The selected batch item is no longer available.");
+                    return;
+                };
+                let (root, summary, selected_path) = active_result.into_parts();
+                let state =
+                    central_panel_state_parts(Some(root), Some(summary), &filters, empty_message);
+                if state.show_no_differences_message {
+                    ui.label(no_differences_message);
+                }
+
+                if state.show_tree && state.show_no_differences_message {
+                    ui.separator();
+                }
+
+                if !state.show_tree {
+                    return;
+                }
+
+                tree::draw_tree_from_parts(ui, root, selected_path, &filters);
+            }
+        }
     }
 }
 
@@ -312,19 +528,33 @@ fn central_panel_state(
     result: Option<&CompareResultView>,
     filters: &tree::TreeFilters,
 ) -> CentralPanelState {
-    let Some(result) = result else {
+    central_panel_state_parts(
+        result.map(|result| &result.root),
+        result.map(|result| &result.summary),
+        filters,
+        "Run compare to populate the diff tree.",
+    )
+}
+
+fn central_panel_state_parts(
+    root: Option<&DiffNode>,
+    summary: Option<&DiffSummary>,
+    filters: &tree::TreeFilters,
+    empty_message: &'static str,
+) -> CentralPanelState {
+    let (Some(root), Some(summary)) = (root, summary) else {
         return CentralPanelState {
-            empty_message: Some("Run compare to populate the diff tree."),
+            empty_message: Some(empty_message),
             show_no_differences_message: false,
             show_tree: false,
         };
     };
 
-    if result.summary.total() == 0 {
+    if summary.total() == 0 {
         return CentralPanelState {
             empty_message: None,
             show_no_differences_message: true,
-            show_tree: tree::should_show(&result.root, filters),
+            show_tree: tree::should_show(root, filters),
         };
     }
 
@@ -333,6 +563,26 @@ fn central_panel_state(
         show_no_differences_message: false,
         show_tree: true,
     }
+}
+
+fn draw_tree_filter_controls(ui: &mut eframe::egui::Ui, filters: &mut tree::TreeFilters) -> bool {
+    let mut filters_changed = false;
+    ui.horizontal_wrapped(|ui| {
+        filters_changed |= ui
+            .checkbox(&mut filters.only_differences, "Only differences")
+            .changed();
+        filters_changed |= ui
+            .checkbox(&mut filters.show_reordered, "Show reordered")
+            .changed();
+        filters_changed |= ui
+            .checkbox(&mut filters.show_unchanged, "Show unchanged")
+            .changed();
+        filters_changed |= ui
+            .checkbox(&mut filters.show_errors, "Show errors")
+            .changed();
+    });
+
+    filters_changed
 }
 
 fn compare_paths(left_path: &Path, right_path: &Path) -> CompareResultView {
@@ -683,10 +933,13 @@ mod test_support {
 mod tests {
     use super::test_support::BatchDirFixture;
     use super::{CompareResultView, PngMetadataCompareApp};
-    use crate::batch_report::BatchCompareReport;
-    use crate::batch_report::UnmatchedSide;
-    use crate::diff::{DiffNode, DiffStatus};
+    use crate::batch_report::{
+        BatchCompareReport, DifferentPairResult, MatchStrategy, MatchedPair, UnmatchedSide,
+    };
+    use crate::batch_scan::BatchFileRecord;
+    use crate::diff::{DiffNode, DiffStatus, DiffSummary};
     use crate::ui::tree::TreeFilters;
+    use std::path::PathBuf;
 
     fn sample_result_view() -> CompareResultView {
         CompareResultView {
@@ -708,6 +961,77 @@ mod tests {
             }],
             summary: Default::default(),
             selected_path: Some("Title".into()),
+        }
+    }
+
+    fn sample_record(relative: &str) -> BatchFileRecord {
+        let relative_path = PathBuf::from(relative);
+        let file_name = relative_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("test path should include a UTF-8 file name")
+            .to_string();
+        let parent_dir_name = relative_path
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .map(|name| name.to_string_lossy().to_string());
+
+        BatchFileRecord {
+            absolute_path: PathBuf::from("C:/tests").join(relative),
+            relative_path,
+            file_name,
+            parent_dir_name,
+        }
+    }
+
+    fn sample_pair(file_name: &str, left: &str, right: &str) -> MatchedPair {
+        MatchedPair {
+            file_name: file_name.to_string(),
+            left: sample_record(left),
+            right: sample_record(right),
+            match_strategy: MatchStrategy::FileNameAndParentDir,
+        }
+    }
+
+    fn sample_different_result(
+        file_name: &str,
+        root_path: &str,
+        leaf_path: &str,
+    ) -> DifferentPairResult {
+        DifferentPairResult {
+            pair: sample_pair(
+                file_name,
+                &format!("left/{file_name}"),
+                &format!("right/{file_name}"),
+            ),
+            diff_root: DiffNode {
+                path: root_path.into(),
+                status: DiffStatus::Modified,
+                left_value: None,
+                right_value: None,
+                summary: format!("{file_name} root modified"),
+                children: vec![DiffNode {
+                    path: leaf_path.into(),
+                    status: DiffStatus::Modified,
+                    left_value: Some("\"left\"".into()),
+                    right_value: Some("\"right\"".into()),
+                    summary: format!("{file_name} leaf modified"),
+                    children: Vec::new(),
+                }],
+            },
+            change_list: vec![DiffNode {
+                path: leaf_path.into(),
+                status: DiffStatus::Modified,
+                left_value: Some("\"left\"".into()),
+                right_value: Some("\"right\"".into()),
+                summary: format!("{file_name} leaf modified"),
+                children: Vec::new(),
+            }],
+            summary: DiffSummary {
+                modified: 1,
+                ..DiffSummary::default()
+            },
+            selected_path: Some(leaf_path.into()),
         }
     }
 
@@ -737,6 +1061,88 @@ mod tests {
     #[test]
     fn compare_pipeline_builds_diff_and_counts() {
         super::run_compare_pipeline_builds_diff_and_counts_impl();
+    }
+
+    #[test]
+    fn directory_mode_prefers_selected_batch_diff_over_single_file_result_state() {
+        let mut report = BatchCompareReport::default();
+        report.different.push(sample_different_result(
+            "batch.png",
+            "BatchRoot",
+            "BatchRoot.Title",
+        ));
+
+        let app = PngMetadataCompareApp {
+            mode: super::AppMode::Directory,
+            result: Some(sample_result_view()),
+            batch_report: Some(report),
+            batch_selection: Some(super::BatchSelection::Different(0)),
+            ..Default::default()
+        };
+
+        let active = app
+            .active_tree_result()
+            .expect("directory mode should expose the selected batch diff");
+
+        assert_eq!(active.root().path, "BatchRoot");
+        assert_eq!(active.selected_path(), Some("BatchRoot.Title"));
+        assert_eq!(active.summary().modified, 1);
+    }
+
+    #[test]
+    fn directory_mode_uses_selected_batch_item_diff_state_for_tree_path() {
+        let mut report = BatchCompareReport::default();
+        report.different.push(sample_different_result(
+            "first.png",
+            "FirstRoot",
+            "FirstRoot.Title",
+        ));
+        report.different.push(sample_different_result(
+            "second.png",
+            "SecondRoot",
+            "SecondRoot.NewField",
+        ));
+
+        let app = PngMetadataCompareApp {
+            mode: super::AppMode::Directory,
+            batch_report: Some(report),
+            batch_selection: Some(super::BatchSelection::Different(1)),
+            ..Default::default()
+        };
+
+        let active = app
+            .active_tree_result()
+            .expect("selected batch item should drive the active diff tree state");
+
+        assert_eq!(active.root().path, "SecondRoot");
+        assert_eq!(active.selected_path(), Some("SecondRoot.NewField"));
+        assert_eq!(active.summary().modified, 1);
+    }
+
+    #[test]
+    fn single_file_mode_keeps_existing_active_diff_behavior() {
+        let mut report = BatchCompareReport::default();
+        report.different.push(sample_different_result(
+            "batch.png",
+            "BatchRoot",
+            "BatchRoot.Title",
+        ));
+
+        let app = PngMetadataCompareApp {
+            mode: super::AppMode::SingleFile,
+            result: Some(sample_result_view()),
+            batch_report: Some(report),
+            batch_selection: Some(super::BatchSelection::Different(0)),
+            ..Default::default()
+        };
+
+        let active = app
+            .active_tree_result()
+            .expect("single-file mode should keep using the single-file result");
+
+        assert_eq!(active.root().path, "StopPlateMetadata");
+        assert_eq!(active.selected_path(), Some("Title"));
+        assert_eq!(active.summary().modified, 0);
     }
 
     #[test]

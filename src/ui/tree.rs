@@ -29,26 +29,42 @@ pub fn should_show(node: &DiffNode, filters: &TreeFilters) -> bool {
 }
 
 pub(crate) fn reconcile_selected_path(result: &mut CompareResultView, filters: &TreeFilters) {
-    let selection_is_visible = result
-        .selected_path
+    reconcile_selected_path_for(&result.root, &mut result.selected_path, filters);
+}
+
+pub fn reconcile_selected_path_for(
+    root: &DiffNode,
+    selected_path: &mut Option<String>,
+    filters: &TreeFilters,
+) {
+    let selection_is_visible = selected_path
         .as_deref()
-        .is_some_and(|path| selected_path_is_visible(&result.root, path, filters));
+        .is_some_and(|path| selected_path_is_visible(root, path, filters));
 
     if selection_is_visible {
         return;
     }
 
-    result.selected_path = first_visible_selection_path(&result.root, filters);
+    *selected_path = first_visible_selection_path(root, filters);
 }
 
 pub fn draw_tree(ui: &mut eframe::egui::Ui, result: &mut CompareResultView, filters: &TreeFilters) {
-    if !should_show(&result.root, filters) {
+    draw_tree_from_parts(ui, &result.root, &mut result.selected_path, filters);
+}
+
+pub fn draw_tree_from_parts(
+    ui: &mut eframe::egui::Ui,
+    root: &DiffNode,
+    selected_path: &mut Option<String>,
+    filters: &TreeFilters,
+) {
+    if !should_show(root, filters) {
         ui.label("No diff nodes match the current filters.");
         return;
     }
 
     eframe::egui::ScrollArea::vertical().show(ui, |ui| {
-        draw_node(ui, &result.root, &mut result.selected_path, filters);
+        draw_node(ui, root, selected_path, filters);
     });
 }
 
@@ -192,7 +208,10 @@ pub(crate) fn hides_unchanged_nodes_when_only_differences_is_enabled_test() {
 
 #[cfg(test)]
 mod tests {
-    use super::{TreeFilters, reconcile_selected_path, should_default_open, should_show};
+    use super::{
+        draw_tree_from_parts, reconcile_selected_path, reconcile_selected_path_for,
+        should_default_open, should_show, TreeFilters,
+    };
     use crate::app::CompareResultView;
     use crate::diff::{DiffNode, DiffStatus};
 
@@ -279,5 +298,68 @@ mod tests {
         reconcile_selected_path(&mut result, &filters);
 
         assert_eq!(result.selected_path.as_deref(), Some("StopPlateMetadata"));
+    }
+
+    #[test]
+    fn reconcile_selected_path_for_supports_batch_diff_roots() {
+        let filters = TreeFilters::default();
+        let root = DiffNode {
+            path: "BatchRoot".into(),
+            status: DiffStatus::Modified,
+            left_value: None,
+            right_value: None,
+            summary: "root modified".into(),
+            children: vec![
+                DiffNode {
+                    path: "BatchRoot.Title".into(),
+                    status: DiffStatus::Unchanged,
+                    left_value: Some("\"same\"".into()),
+                    right_value: Some("\"same\"".into()),
+                    summary: "Title unchanged".into(),
+                    children: Vec::new(),
+                },
+                DiffNode {
+                    path: "BatchRoot.LegacyCode".into(),
+                    status: DiffStatus::Modified,
+                    left_value: Some("\"A1\"".into()),
+                    right_value: Some("\"B2\"".into()),
+                    summary: "LegacyCode modified".into(),
+                    children: Vec::new(),
+                },
+            ],
+        };
+        let mut selected_path = Some("BatchRoot.Title".into());
+
+        reconcile_selected_path_for(&root, &mut selected_path, &filters);
+
+        assert_eq!(selected_path.as_deref(), Some("BatchRoot.LegacyCode"));
+    }
+
+    #[test]
+    fn draw_tree_from_parts_renders_without_compare_result_wrapper() {
+        let ctx = eframe::egui::Context::default();
+        let root = DiffNode {
+            path: "BatchRoot".into(),
+            status: DiffStatus::Modified,
+            left_value: None,
+            right_value: None,
+            summary: "root modified".into(),
+            children: vec![DiffNode {
+                path: "BatchRoot.Title".into(),
+                status: DiffStatus::Modified,
+                left_value: Some("\"left\"".into()),
+                right_value: Some("\"right\"".into()),
+                summary: "Title modified".into(),
+                children: Vec::new(),
+            }],
+        };
+        let mut selected_path = Some("BatchRoot.Title".into());
+        let output = ctx.run(Default::default(), |ctx| {
+            eframe::egui::CentralPanel::default().show(ctx, |ui| {
+                draw_tree_from_parts(ui, &root, &mut selected_path, &TreeFilters::default());
+            });
+        });
+
+        assert!(!output.shapes.is_empty());
     }
 }
