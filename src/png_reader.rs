@@ -42,6 +42,9 @@ pub fn extract_stop_plate_metadata(bytes: &[u8]) -> Result<String, CompareError>
                 return Ok(metadata);
             }
         }
+        if chunk_type == b"IEND" {
+            break;
+        }
     }
 
     Err(CompareError::MissingStopPlateMetadata)
@@ -49,14 +52,19 @@ pub fn extract_stop_plate_metadata(bytes: &[u8]) -> Result<String, CompareError>
 
 fn parse_stop_plate_itxt(data: &[u8]) -> Result<Option<String>, CompareError> {
     let Some(keyword_end) = data.iter().position(|&byte| byte == 0) else {
-        return Err(CompareError::InvalidInternationalText(
-            "missing keyword terminator".into(),
-        ));
+        return Ok(None);
     };
 
     let keyword = std::str::from_utf8(&data[..keyword_end]).map_err(|err| {
         CompareError::InvalidInternationalText(format!("keyword is not valid UTF-8: {err}"))
-    })?;
+    });
+    let Ok(keyword) = keyword else {
+        return Ok(None);
+    };
+
+    if keyword != STOP_PLATE_KEYWORD {
+        return Ok(None);
+    }
 
     let mut offset = keyword_end + 1;
     let Some(&compression_flag) = data.get(offset) else {
@@ -100,10 +108,6 @@ fn parse_stop_plate_itxt(data: &[u8]) -> Result<Option<String>, CompareError> {
         ));
     };
     offset += translated_end + 1;
-
-    if keyword != STOP_PLATE_KEYWORD {
-        return Ok(None);
-    }
 
     let text = std::str::from_utf8(&data[offset..])
         .map_err(|err| CompareError::MetadataUtf8(err.to_string()))?;
@@ -154,6 +158,29 @@ mod tests {
             extract_stop_plate_metadata(&png).expect_err("compressed metadata should be rejected");
 
         assert!(matches!(error, CompareError::UnsupportedCompressedText));
+    }
+
+    #[test]
+    fn skips_invalid_non_target_itxt_before_stop_plate_metadata() {
+        let png = png_with_chunks(vec![
+            chunk(*b"iTXt", b"\xff\xfe\xfd".to_vec()),
+            stop_plate_itxt(r#"{"plate":"ABC123"}"#),
+        ]);
+
+        let metadata = extract_stop_plate_metadata(&png).expect("later metadata should be found");
+
+        assert_eq!(metadata, r#"{"plate":"ABC123"}"#);
+    }
+
+    #[test]
+    fn ignores_trailer_bytes_after_iend() {
+        let mut png = png_with_chunks(vec![chunk(*b"IEND", Vec::new())]);
+        png.extend_from_slice(b"trailing junk that is not a chunk");
+
+        let error =
+            extract_stop_plate_metadata(&png).expect_err("trailer bytes after IEND should be ignored");
+
+        assert!(matches!(error, CompareError::MissingStopPlateMetadata));
     }
 
     fn png_with_chunks(chunks: Vec<Vec<u8>>) -> Vec<u8> {
