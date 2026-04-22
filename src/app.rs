@@ -87,120 +87,16 @@ impl eframe::App for PngMetadataCompareApp {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::PngMetadataCompareApp;
+pub(crate) fn run_compare_pipeline_builds_diff_and_counts_test() {
+    run_compare_pipeline_builds_diff_and_counts_impl();
+}
+
+#[cfg(test)]
+fn run_compare_pipeline_builds_diff_and_counts_impl() {
     use crate::diff::DiffStatus;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
-
-    #[test]
-    fn compare_is_disabled_until_both_paths_are_present() {
-        let mut app = PngMetadataCompareApp::default();
-        assert!(!app.can_compare());
-
-        app.left_path = Some("left.png".into());
-        assert!(!app.can_compare());
-
-        app.right_path = Some("right.png".into());
-        assert!(app.can_compare());
-    }
-
-    #[test]
-    fn scaffold_render_produces_output() {
-        let mut app = PngMetadataCompareApp::default();
-        let ctx = eframe::egui::Context::default();
-        let output = ctx.run(Default::default(), |ctx| {
-            app.render_scaffold(ctx);
-        });
-
-        assert!(!output.shapes.is_empty());
-    }
-
-    #[test]
-    fn compare_pipeline_builds_diff_and_counts() {
-        let left = TestPngFile::new(
-            "left",
-            r#"{
-                "Title": "Old title",
-                "LegacyCode": "A1",
-                "Lines": [
-                    {
-                        "LineName": "B932",
-                        "Direction": "Terminal",
-                        "PriceDescription": "1"
-                    },
-                    {
-                        "LineName": "M375",
-                        "Direction": "Downtown",
-                        "PriceDescription": "2"
-                    }
-                ]
-            }"#,
-        );
-        let right = TestPngFile::new(
-            "right",
-            r#"{
-                "Title": "New title",
-                "NewField": "added",
-                "Lines": [
-                    {
-                        "LineName": "M375",
-                        "Direction": "Downtown",
-                        "PriceDescription": "3"
-                    },
-                    {
-                        "LineName": "B932",
-                        "Direction": "Terminal",
-                        "PriceDescription": "1"
-                    }
-                ]
-            }"#,
-        );
-
-        let mut app = PngMetadataCompareApp {
-            left_path: Some(left.path().display().to_string()),
-            right_path: Some(right.path().display().to_string()),
-            ..Default::default()
-        };
-
-        app.run_compare();
-
-        let result = app.result.expect("compare result should be stored");
-        assert_eq!(result.root.path, "StopPlateMetadata");
-        assert_eq!(result.root.status, DiffStatus::Modified);
-        assert_eq!(result.selected_path.as_deref(), Some("StopPlateMetadata"));
-        assert_eq!(result.summary.modified, 5);
-        assert_eq!(result.summary.added, 1);
-        assert_eq!(result.summary.removed, 1);
-        assert_eq!(result.summary.reordered, 2);
-        assert_eq!(result.summary.error, 0);
-        assert_eq!(result.summary.total(), result.change_list.len());
-        assert!(
-            result
-                .change_list
-                .iter()
-                .any(|node| node.path == "Title" && node.status == DiffStatus::Modified),
-            "expected modified Title node: {:#?}",
-            result.change_list
-        );
-        assert!(
-            result
-                .change_list
-                .iter()
-                .any(|node| node.path == "NewField" && node.status == DiffStatus::Added),
-            "expected added NewField node: {:#?}",
-            result.change_list
-        );
-        assert!(
-            result
-                .change_list
-                .iter()
-                .any(|node| node.path == "LegacyCode" && node.status == DiffStatus::Removed),
-            "expected removed LegacyCode node: {:#?}",
-            result.change_list
-        );
-    }
 
     struct TestPngFile {
         path: PathBuf,
@@ -263,5 +159,120 @@ mod tests {
         bytes.extend_from_slice(&data);
         bytes.extend_from_slice(&0u32.to_be_bytes());
         bytes
+    }
+
+    let left = TestPngFile::new(
+        "left",
+        r#"{
+                "Title": "Old title",
+                "LegacyCode": "A1",
+                "Lines": [
+                    {
+                        "LineName": "B932",
+                        "Direction": "Terminal",
+                        "PriceDescription": "1"
+                    },
+                    {
+                        "LineName": "M375",
+                        "Direction": "Downtown",
+                        "PriceDescription": "2"
+                    }
+                ]
+            }"#,
+    );
+    let right = TestPngFile::new(
+        "right",
+        r#"{
+                "Title": "New title",
+                "NewField": "added",
+                "Lines": [
+                    {
+                        "LineName": "M375",
+                        "Direction": "Downtown",
+                        "PriceDescription": "3"
+                    },
+                    {
+                        "LineName": "B932",
+                        "Direction": "Terminal",
+                        "PriceDescription": "1"
+                    }
+                ]
+            }"#,
+    );
+
+    let mut app = PngMetadataCompareApp {
+        left_path: Some(left.path().display().to_string()),
+        right_path: Some(right.path().display().to_string()),
+        ..Default::default()
+    };
+
+    app.run_compare();
+
+    let result = app.result.expect("compare result should be stored");
+    assert_eq!(result.root.path, "StopPlateMetadata");
+    assert_eq!(result.root.status, DiffStatus::Modified);
+    assert_eq!(result.selected_path.as_deref(), Some("StopPlateMetadata"));
+    assert_eq!(result.summary.modified, 5);
+    assert_eq!(result.summary.added, 1);
+    assert_eq!(result.summary.removed, 1);
+    assert_eq!(result.summary.reordered, 2);
+    assert_eq!(result.summary.error, 0);
+    assert_eq!(result.summary.total(), result.change_list.len());
+    assert!(
+        result
+            .change_list
+            .iter()
+            .any(|node| node.path == "Title" && node.status == DiffStatus::Modified),
+        "expected modified Title node: {:#?}",
+        result.change_list
+    );
+    assert!(
+        result
+            .change_list
+            .iter()
+            .any(|node| node.path == "NewField" && node.status == DiffStatus::Added),
+        "expected added NewField node: {:#?}",
+        result.change_list
+    );
+    assert!(
+        result
+            .change_list
+            .iter()
+            .any(|node| node.path == "LegacyCode" && node.status == DiffStatus::Removed),
+        "expected removed LegacyCode node: {:#?}",
+        result.change_list
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PngMetadataCompareApp;
+
+    #[test]
+    fn compare_is_disabled_until_both_paths_are_present() {
+        let mut app = PngMetadataCompareApp::default();
+        assert!(!app.can_compare());
+
+        app.left_path = Some("left.png".into());
+        assert!(!app.can_compare());
+
+        app.right_path = Some("right.png".into());
+        assert!(app.can_compare());
+    }
+
+    #[test]
+    fn scaffold_render_produces_output() {
+        let mut app = PngMetadataCompareApp::default();
+        let ctx = eframe::egui::Context::default();
+        let output = ctx.run(Default::default(), |ctx| {
+            app.render_scaffold(ctx);
+        });
+
+        assert!(!output.shapes.is_empty());
+    }
+
+    #[test]
+    fn compare_pipeline_builds_diff_and_counts() {
+        super::run_compare_pipeline_builds_diff_and_counts_impl();
     }
 }
