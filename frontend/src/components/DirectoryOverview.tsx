@@ -5,12 +5,12 @@ import type { ActiveFilter } from '../features/workbench/useWorkbench';
 import type { BatchListItem, BatchListItemKind, DirectorySummary } from '../lib/types';
 
 const FILTERS: { id: ActiveFilter; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'different', label: 'Different' },
-  { id: 'identical', label: 'Identical' },
-  { id: 'left_only', label: 'Left-only' },
-  { id: 'right_only', label: 'Right-only' },
-  { id: 'error', label: 'Error' },
+  { id: 'all', label: '全部' },
+  { id: 'different', label: '差异' },
+  { id: 'identical', label: '相同' },
+  { id: 'left_only', label: '仅左侧' },
+  { id: 'right_only', label: '仅右侧' },
+  { id: 'error', label: '错误' },
 ];
 
 export function DirectoryOverview({
@@ -50,28 +50,15 @@ export function DirectoryOverview({
     <>
       <div className="toolbar">
         <div className="path-group">
-          <span className="path-label">Left Directory</span>
+          <span className="path-label">左目录</span>
           <div className="path-input-row">
             <input
               className="path-input"
               value={leftInput}
               onChange={(e) => onLeftInput(e.target.value)}
-              placeholder="Path to left folder…"
+              placeholder="左侧目录路径…"
             />
-            <button type="button" className="choose-btn" onClick={onPickLeft}>Choose</button>
-          </div>
-        </div>
-        <span className="vs-divider">vs</span>
-        <div className="path-group">
-          <span className="path-label">Right Directory</span>
-          <div className="path-input-row">
-            <input
-              className="path-input"
-              value={rightInput}
-              onChange={(e) => onRightInput(e.target.value)}
-              placeholder="Path to right folder…"
-            />
-            <button type="button" className="choose-btn" onClick={onPickRight}>Choose</button>
+            <button type="button" className="choose-btn" onClick={onPickLeft}>选择</button>
           </div>
         </div>
         <div className="cta-wrap">
@@ -82,8 +69,20 @@ export function DirectoryOverview({
               disabled={isLoading || !leftInput || !rightInput}
               onClick={onScan}
             >
-              {isLoading ? 'Scanning…' : 'Scan'}
+              {isLoading ? '扫描中…' : '扫描'}
             </button>
+          </div>
+        </div>
+        <div className="path-group">
+          <span className="path-label">右目录</span>
+          <div className="path-input-row">
+            <input
+              className="path-input"
+              value={rightInput}
+              onChange={(e) => onRightInput(e.target.value)}
+              placeholder="右侧目录路径…"
+            />
+            <button type="button" className="choose-btn" onClick={onPickRight}>选择</button>
           </div>
         </div>
       </div>
@@ -118,16 +117,16 @@ export function DirectoryOverview({
 
       <div className="card-grid">
         {isLoading && !directorySummary && (
-          <EmptyState title="Scanning…" body="Finding and comparing PNG files…" />
+          <EmptyState title="扫描中…" body="正在查找并对比 PNG 文件，请稍候…" />
         )}
         {!directorySummary && !isLoading && (
           <EmptyState
-            title="Choose directories and scan"
-            body="All PNG files found in both directories will be compared and shown here."
+            title="选择两个目录并扫描"
+            body="选择左右目录路径，点击扫描后结果显示在此处。"
           />
         )}
         {filteredItems.length === 0 && directorySummary && !isLoading && (
-          <EmptyState title="No results" body="No files match the selected filter." />
+          <EmptyState title="无结果" body="没有文件与当前筛选条件匹配。" />
         )}
         {filteredItems.map((item, index) => (
           <FileCard

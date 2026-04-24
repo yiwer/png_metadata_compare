@@ -2,11 +2,11 @@
 import type { BatchListItem, BatchListItemKind } from '../lib/types';
 
 const STATUS_LABEL: Record<BatchListItemKind, string> = {
-  different: 'Different',
-  identical: 'Identical',
-  left_only: 'Left Only',
-  right_only: 'Right Only',
-  error: 'Error',
+  different: '差异',
+  identical: '相同',
+  left_only: '仅左侧',
+  right_only: '仅右侧',
+  error: '错误',
 };
 
 export function FileCard({
@@ -38,10 +38,11 @@ export function FileCard({
 }
 
 function cardMeta(item: BatchListItem): string {
-  if (item.kind === 'error') return item.message ?? 'parse failed';
-  if (item.kind === 'identical') return 'no changes';
-  if (item.kind === 'left_only') return 'not in right dir';
-  if (item.kind === 'right_only') return 'not in left dir';
-  if (item.difference_count > 0) return `${item.difference_count} change${item.difference_count !== 1 ? 's' : ''}`;
-  return 'different';
+  if (item.kind === 'error') return item.message ?? '解析失败';
+  if (item.kind === 'identical') return '无变更';
+  if (item.kind === 'left_only') return '右侧目录中不存在';
+  if (item.kind === 'right_only') return '左侧目录中不存在';
+  if (item.difference_count > 0)
+    return `${item.difference_count} 处变更`;
+  return '存在差异';
 }
