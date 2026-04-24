@@ -26,9 +26,9 @@
   --border-light: 1px solid #f1f1f1;
 
   /* Shadows — MotherDuck directional (left-down offset) */
-  --shadow-lift: var(--color-ink) -4px 4px 0px 0px;
-  --shadow-lift-sm: var(--color-ink) -2px 2px 0px 0px;
-  --shadow-input-focus: var(--color-accent-blue) -3px 3px 0px 0px;
+  --shadow-lift:        -4px 4px 0px 0px var(--color-ink);
+  --shadow-lift-sm:     -2px 2px 0px 0px var(--color-ink);
+  --shadow-input-focus: -3px 3px 0px 0px var(--color-accent-blue);
 
   /* Spacing (4px base) */
   --space-1: 0.25rem;   /* 4px */
@@ -39,9 +39,14 @@
   --space-6: 1.5rem;    /* 24px */
 
   /* Typography */
-  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', 'Courier New', monospace;
+  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, 'Courier New', monospace;
 
   /* Transitions */
   --transition-fast: 0.12s ease-in-out;
   --transition-card: 0.15s ease-out;
+
+  /* Compat aliases — remove after Task 10 rewrites app.css */
+  --font-ui: var(--font-mono);
+  --shadow-panel: 8px 8px 0 0 var(--color-ink);
+  --radius-none: 0;
 }
