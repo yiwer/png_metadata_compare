@@ -50,28 +50,15 @@ export function PairComparison({
     <>
       <div className="toolbar">
         <div className="path-group">
-          <span className="path-label">{mode === 'directory' ? 'Left File' : 'Left PNG'}</span>
+          <span className="path-label">{mode === 'directory' ? '左文件' : '左图'}</span>
           <div className="path-input-row">
             <input
               className="path-input"
               value={leftInput}
               onChange={(e) => onLeftInput(e.target.value)}
-              placeholder="Path to left PNG…"
+              placeholder={mode === 'directory' ? '左侧文件路径…' : '左侧 PNG 路径…'}
             />
-            <button type="button" className="choose-btn" onClick={onPickLeft}>Choose</button>
-          </div>
-        </div>
-        <span className="vs-divider">vs</span>
-        <div className="path-group">
-          <span className="path-label">{mode === 'directory' ? 'Right File' : 'Right PNG'}</span>
-          <div className="path-input-row">
-            <input
-              className="path-input"
-              value={rightInput}
-              onChange={(e) => onRightInput(e.target.value)}
-              placeholder="Path to right PNG…"
-            />
-            <button type="button" className="choose-btn" onClick={onPickRight}>Choose</button>
+            <button type="button" className="choose-btn" onClick={onPickLeft}>选择</button>
           </div>
         </div>
         <div className="cta-wrap">
@@ -82,8 +69,20 @@ export function PairComparison({
               disabled={isLoading || !leftInput || !rightInput}
               onClick={onCompare}
             >
-              {isLoading ? 'Comparing…' : 'Compare'}
+              {isLoading ? '对比中…' : '对比'}
             </button>
+          </div>
+        </div>
+        <div className="path-group">
+          <span className="path-label">{mode === 'directory' ? '右文件' : '右图'}</span>
+          <div className="path-input-row">
+            <input
+              className="path-input"
+              value={rightInput}
+              onChange={(e) => onRightInput(e.target.value)}
+              placeholder={mode === 'directory' ? '右侧文件路径…' : '右侧 PNG 路径…'}
+            />
+            <button type="button" className="choose-btn" onClick={onPickRight}>选择</button>
           </div>
         </div>
       </div>
@@ -141,8 +140,8 @@ function SplitPanelContent({
   if (!pairResult) {
     return (
       <EmptyState
-        title="Choose inputs and compare"
-        body="Results appear here after you run a comparison."
+        title="选择文件并对比"
+        body="选择左右两侧的 PNG 文件，点击对比后结果显示在此处。"
       />
     );
   }
@@ -151,7 +150,7 @@ function SplitPanelContent({
 
   if (viewMode === 'tree') {
     if (!sideData.metadata) {
-      return <EmptyState title="No metadata" body="This file has no embedded metadata." />;
+      return <EmptyState title="无元数据" body="该文件不含嵌入式元数据。" />;
     }
     return (
       <MetadataTree
@@ -164,7 +163,7 @@ function SplitPanelContent({
 
   if (viewMode === 'json') {
     const raw = sideData.raw_json;
-    if (!raw) return <EmptyState title="No JSON" body="No raw JSON payload found." />;
+    if (!raw) return <EmptyState title="无 JSON" body="未找到原始 JSON 数据。" />;
     return <pre className="json-block">{formatJson(raw)}</pre>;
   }
 
