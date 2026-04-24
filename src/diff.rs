@@ -1,10 +1,12 @@
 use crate::error::CompareError;
 use crate::metadata::MetadataLoadResult;
+use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DiffStatus {
     Unchanged,
     Modified,
@@ -14,7 +16,7 @@ pub enum DiffStatus {
     Error,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DiffNode {
     pub path: String,
     pub status: DiffStatus,
@@ -24,7 +26,7 @@ pub struct DiffNode {
     pub children: Vec<DiffNode>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct DiffSummary {
     pub modified: usize,
     pub added: usize,

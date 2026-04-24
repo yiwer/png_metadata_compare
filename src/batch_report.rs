@@ -1,8 +1,10 @@
 use crate::batch_scan::BatchFileRecord;
 use crate::diff::{DiffNode, DiffSummary};
+use serde::Serialize;
 use std::path::PathBuf;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MatchStrategy {
     FileName,
     FileNameAndParentDir,
@@ -16,7 +18,8 @@ pub struct MatchedPair {
     pub match_strategy: MatchStrategy,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UnmatchedSide {
     Left,
     Right,
@@ -50,7 +53,8 @@ pub struct DifferentPairResult {
     pub selected_path: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BatchIssue {
     ScanFailure {
         side: UnmatchedSide,
