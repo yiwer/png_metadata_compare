@@ -3,9 +3,9 @@ import type { AnalysisTab, BatchListItemKind } from './lib/types';
 
 const tabs: Array<{ id: AnalysisTab; label: string }> = [
   { id: 'diff', label: 'Diff' },
-  { id: 'left-metadata', label: 'Left Metadata' },
-  { id: 'right-metadata', label: 'Right Metadata' },
-  { id: 'raw-json', label: 'Raw JSON' },
+  { id: 'left_metadata', label: 'Left Metadata' },
+  { id: 'right_metadata', label: 'Right Metadata' },
+  { id: 'raw_json', label: 'Raw JSON' },
   { id: 'images', label: 'Images' },
 ];
 
@@ -14,15 +14,15 @@ const panelPlaceholders: Record<AnalysisTab, { title: string; body: string }> = 
     title: 'Diff View',
     body: 'State is now sourced from the workbench hook. Full tree rendering arrives in the next task.',
   },
-  'left-metadata': {
+  left_metadata: {
     title: 'Left Metadata',
     body: 'Placeholder metadata browser for the selected left-side PNG payload.',
   },
-  'right-metadata': {
+  right_metadata: {
     title: 'Right Metadata',
     body: 'Placeholder metadata browser for the selected right-side PNG payload.',
   },
-  'raw-json': {
+  raw_json: {
     title: 'Raw JSON',
     body: 'Placeholder raw payload viewer for comparing extracted JSON side by side.',
   },
@@ -91,38 +91,15 @@ export default function App() {
     ? `${activeInspection.left.file_name} vs ${activeInspection.right.file_name}`
     : activeSingleSideInspection
       ? `${activeSingleSideInspection.file_name} only`
-      : 'Select inputs and run compare';
-  const inspectorValues = activeInspection
-    ? {
-        left: activeInspection.left.raw_json ?? 'No left payload',
-        right: activeInspection.right.raw_json ?? 'No right payload',
-        status:
-          activeInspection.diff_summary.error > 0
-            ? 'Error'
-            : activeInspection.diff_summary.modified > 0 ||
-                activeInspection.diff_summary.added > 0 ||
-                activeInspection.diff_summary.removed > 0 ||
-                activeInspection.diff_summary.reordered > 0
-              ? 'Different'
-              : 'Identical',
-      }
-    : activeSingleSideInspection
-      ? {
-          left:
-            activeSingleSideInspection.side === 'left'
-              ? activeSingleSideInspection.raw_json ?? 'No payload'
-              : 'Missing',
-          right:
-            activeSingleSideInspection.side === 'right'
-              ? activeSingleSideInspection.raw_json ?? 'No payload'
-              : 'Missing',
-          status: activeSingleSideInspection.error ? 'Error' : 'Single-sided',
-        }
-      : {
-          left: 'Run compare to inspect left-side details.',
-          right: 'Run compare to inspect right-side details.',
-          status: 'Idle',
-        };
+      : 'Preview placeholder';
+  const diffCount = activeInspection
+    ? activeInspection.diff_summary.modified +
+      activeInspection.diff_summary.added +
+      activeInspection.diff_summary.removed +
+      activeInspection.diff_summary.reordered +
+      activeInspection.diff_summary.error
+    : 0;
+  const activePlaceholder = panelPlaceholders[activeTab];
 
   return (
     <div className="app-shell">
@@ -167,16 +144,6 @@ export default function App() {
           </div>
         </div>
       </header>
-
-      {errorBanner ? (
-        <div className="panel" role="alert" aria-live="polite">
-          <div className="panel-heading">
-            <span>Error</span>
-            <strong>Workbench banner</strong>
-          </div>
-          <p>{errorBanner}</p>
-        </div>
-      ) : null}
 
       <div className="workbench">
         <aside className="result-rail panel" aria-label="Result rail">
@@ -226,21 +193,19 @@ export default function App() {
               <article className="preview-card">
                 <span className="preview-label">LEFT PNG</span>
                 <div className="preview-frame preview-frame--blue">
-                  {activeInspection
-                    ? activeInspection.left.file_name
-                    : activeSingleSideInspection?.side === 'left'
+                  {activeInspection?.left.file_name ??
+                    (activeSingleSideInspection?.side === 'left'
                       ? activeSingleSideInspection.file_name
-                      : 'Awaiting selection'}
+                      : 'Preview pending')}
                 </div>
               </article>
               <article className="preview-card">
                 <span className="preview-label">RIGHT PNG</span>
                 <div className="preview-frame preview-frame--yellow">
-                  {activeInspection
-                    ? activeInspection.right.file_name
-                    : activeSingleSideInspection?.side === 'right'
+                  {activeInspection?.right.file_name ??
+                    (activeSingleSideInspection?.side === 'right'
                       ? activeSingleSideInspection.file_name
-                      : 'Awaiting selection'}
+                      : 'Preview pending')}
                 </div>
               </article>
             </div>
@@ -292,40 +257,36 @@ export default function App() {
                     {isActive ? (
                       <>
                         <div className="panel-heading">
-                          <span>{placeholder.title}</span>
+                          <span>{activePlaceholder.title}</span>
                           <strong>
-                            {activeInspection
-                              ? `${activeInspection.diff_summary.modified} modified fields`
-                              : activeSingleSideInspection
-                                ? 'Single-side inspection'
-                                : 'Scaffold placeholder'}
+                            {isLoading
+                              ? 'Loading workspace'
+                              : errorBanner
+                                ? 'Error banner active'
+                                : activeInspection
+                                  ? `${diffCount} changed fields`
+                                  : activeSingleSideInspection
+                                    ? 'Single-side inspection'
+                                    : 'Scaffold placeholder'}
                           </strong>
                         </div>
                         <div className="analysis-panels">
                           <section className="analysis-panel">
-                            <h2>{placeholder.title}</h2>
-                            <ul>
-                              <li>{activeNodePath ?? 'No active node selected.'}</li>
-                              <li>
-                                {activeResultItem
+                            <h2>{activePlaceholder.title}</h2>
+                            <p>{activePlaceholder.body}</p>
+                          </section>
+                          <section className="analysis-panel">
+                            <h2>Workbench Notes</h2>
+                            <p>
+                              {errorBanner ??
+                                (activeResultItem
                                   ? summarizeItem(
                                       activeResultItem.kind,
                                       activeResultItem.difference_count,
                                       activeResultItem.message,
                                     )
-                                  : 'Run compare to populate synchronized workbench state.'}
-                              </li>
-                              <li>
-                                {activeInspection
-                                  ? activeInspection.diff_root.summary
-                                  : activeSingleSideInspection?.error?.message ??
-                                    'Payload wiring is active; full tree rendering lands next.'}
-                              </li>
-                            </ul>
-                          </section>
-                          <section className="analysis-panel">
-                            <h2>Workbench Notes</h2>
-                            <p>{placeholder.body}</p>
+                                  : activeNodePath ?? 'Run compare to populate synchronized state.')}
+                            </p>
                           </section>
                         </div>
                       </>
@@ -358,15 +319,33 @@ export default function App() {
                 </div>
                 <div>
                   <dt>Left</dt>
-                  <dd>{inspectorValues.left}</dd>
+                  <dd>
+                    {activeInspection?.left.file_name ??
+                      (activeSingleSideInspection?.side === 'left'
+                        ? activeSingleSideInspection.file_name
+                        : 'No left selection')}
+                  </dd>
                 </div>
                 <div>
                   <dt>Right</dt>
-                  <dd>{inspectorValues.right}</dd>
+                  <dd>
+                    {activeInspection?.right.file_name ??
+                      (activeSingleSideInspection?.side === 'right'
+                        ? activeSingleSideInspection.file_name
+                        : 'No right selection')}
+                  </dd>
                 </div>
                 <div>
                   <dt>Status</dt>
-                  <dd>{inspectorValues.status}</dd>
+                  <dd>
+                    {errorBanner
+                      ? 'Error'
+                      : activeInspection
+                        ? 'Pair inspection'
+                        : activeSingleSideInspection
+                          ? 'Single-side inspection'
+                          : 'Idle'}
+                  </dd>
                 </div>
               </dl>
             </aside>

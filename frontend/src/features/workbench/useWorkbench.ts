@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { compareSingle, inspectSingle, scanDirectory } from '../../lib/api';
+import { workbenchApi } from '../../lib/api';
 import type {
   AnalysisTab,
   BatchListItem,
@@ -9,6 +9,7 @@ import type {
   Side,
   WorkbenchMode,
 } from '../../lib/types';
+import type { WorkbenchApi } from '../../lib/api';
 
 type ModeInputs = Record<WorkbenchMode, { left: string; right: string }>;
 
@@ -22,7 +23,7 @@ function emptyInputs(): ModeInputs {
 }
 
 function defaultTabForSingleSide(side: Side): AnalysisTab {
-  return side === 'left' ? 'left-metadata' : 'right-metadata';
+  return side === 'left' ? 'left_metadata' : 'right_metadata';
 }
 
 function formatError(error: unknown): string {
@@ -33,7 +34,7 @@ function formatError(error: unknown): string {
   return String(error);
 }
 
-export function useWorkbench() {
+export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   const [mode, setModeState] = useState<WorkbenchMode>('single');
   const [inputsByMode, setInputsByMode] = useState<ModeInputs>(emptyInputs);
   const [directorySummary, setDirectorySummary] = useState<DirectorySummary | null>(null);
@@ -94,7 +95,7 @@ export function useWorkbench() {
     }
 
     if (item.left_path && item.right_path) {
-      const inspection = await compareSingle(item.left_path, item.right_path);
+      const inspection = await api.compareSingle(item.left_path, item.right_path);
       setActiveInspection(inspection);
       setActiveSingleSideInspection(null);
       setActiveTab(DEFAULT_TAB);
@@ -104,7 +105,7 @@ export function useWorkbench() {
 
     if (item.left_path || item.right_path) {
       const side: Side = item.left_path ? 'left' : 'right';
-      const inspection = await inspectSingle(item.left_path ?? item.right_path ?? '', side);
+      const inspection = await api.inspectSingle(item.left_path ?? item.right_path ?? '', side);
       setActiveInspection(null);
       setActiveSingleSideInspection(inspection);
       setActiveTab(defaultTabForSingleSide(side));
@@ -112,7 +113,7 @@ export function useWorkbench() {
       return;
     }
 
-    setActiveTab('raw-json');
+    setActiveTab('raw_json');
   }
 
   async function selectResultItem(itemId: string) {
@@ -139,7 +140,7 @@ export function useWorkbench() {
 
     try {
       if (mode === 'single') {
-        const inspection = await compareSingle(activeInputs.left, activeInputs.right);
+        const inspection = await api.compareSingle(activeInputs.left, activeInputs.right);
         setDirectorySummary(null);
         setActiveResultItem(null);
         setActiveInspection(inspection);
@@ -149,7 +150,7 @@ export function useWorkbench() {
         return;
       }
 
-      const summary = await scanDirectory(activeInputs.left, activeInputs.right);
+      const summary = await api.scanDirectory(activeInputs.left, activeInputs.right);
       setDirectorySummary(summary);
       setActiveResultItem(null);
       setActiveInspection(null);

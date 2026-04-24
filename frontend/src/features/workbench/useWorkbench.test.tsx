@@ -1,22 +1,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useWorkbench } from './useWorkbench';
-
-vi.mock('../../lib/api', () => ({
-  compareSingle: vi.fn(),
-  inspectSingle: vi.fn(),
-  scanDirectory: vi.fn(),
-}));
-
-import { compareSingle, inspectSingle, scanDirectory } from '../../lib/api';
 import type {
   DirectorySummary,
   PairInspection,
   SideInspection,
 } from '../../lib/types';
-
-const compareSingleMock = vi.mocked(compareSingle);
-const inspectSingleMock = vi.mocked(inspectSingle);
-const scanDirectoryMock = vi.mocked(scanDirectory);
+import type { WorkbenchApi } from '../../lib/api';
 
 describe('useWorkbench', () => {
   it('keeps mode-specific inputs and synchronizes active result inspection state', async () => {
@@ -96,11 +85,13 @@ describe('useWorkbench', () => {
       ],
     };
 
-    compareSingleMock.mockResolvedValue(pairInspection);
-    scanDirectoryMock.mockResolvedValue(directorySummary);
-    inspectSingleMock.mockResolvedValue(leftOnlyInspection);
+    const api: WorkbenchApi = {
+      compareSingle: vi.fn().mockResolvedValue(pairInspection),
+      scanDirectory: vi.fn().mockResolvedValue(directorySummary),
+      inspectSingle: vi.fn().mockResolvedValue(leftOnlyInspection),
+    };
 
-    const { result } = renderHook(() => useWorkbench());
+    const { result } = renderHook(() => useWorkbench(api));
 
     act(() => {
       result.current.setLeftInput('C:/left/single.png');
@@ -111,7 +102,7 @@ describe('useWorkbench', () => {
       await result.current.runCompare();
     });
 
-    expect(compareSingleMock).toHaveBeenCalledWith('C:/left/single.png', 'C:/right/single.png');
+    expect(api.compareSingle).toHaveBeenCalledWith('C:/left/single.png', 'C:/right/single.png');
     expect(result.current.mode).toBe('single');
     expect(result.current.activeInspection).toEqual(pairInspection);
     expect(result.current.activeSingleSideInspection).toBeNull();
@@ -141,8 +132,8 @@ describe('useWorkbench', () => {
       expect(result.current.activeResultItem?.id).toBe('different-1');
     });
 
-    expect(scanDirectoryMock).toHaveBeenCalledWith('C:/left-dir', 'C:/right-dir');
-    expect(compareSingleMock).toHaveBeenLastCalledWith('C:/left/diff.png', 'C:/right/diff.png');
+    expect(api.scanDirectory).toHaveBeenCalledWith('C:/left-dir', 'C:/right-dir');
+    expect(api.compareSingle).toHaveBeenLastCalledWith('C:/left/diff.png', 'C:/right/diff.png');
     expect(result.current.directorySummary).toEqual(directorySummary);
     expect(result.current.activeInspection).toEqual(pairInspection);
     expect(result.current.activeSingleSideInspection).toBeNull();
@@ -153,11 +144,11 @@ describe('useWorkbench', () => {
       await result.current.selectResultItem('left-only-1');
     });
 
-    expect(inspectSingleMock).toHaveBeenCalledWith('C:/left/only.png', 'left');
+    expect(api.inspectSingle).toHaveBeenCalledWith('C:/left/only.png', 'left');
     expect(result.current.activeResultItem?.id).toBe('left-only-1');
     expect(result.current.activeInspection).toBeNull();
     expect(result.current.activeSingleSideInspection).toEqual(leftOnlyInspection);
-    expect(result.current.activeTab).toBe('left-metadata');
+    expect(result.current.activeTab).toBe('left_metadata');
     expect(result.current.activeNodePath).toBeNull();
 
     act(() => {

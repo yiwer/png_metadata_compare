@@ -92,7 +92,7 @@ export type WorkbenchMode = 'single' | 'directory';
 
 export type AnalysisTab =
   | 'diff'
-  | 'left-metadata'
-  | 'right-metadata'
-  | 'raw-json'
+  | 'left_metadata'
+  | 'right_metadata'
+  | 'raw_json'
   | 'images';
