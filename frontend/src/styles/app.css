@@ -187,7 +187,7 @@ button:focus-visible {
 .toolbar {
   background: var(--color-surface);
   border-bottom: var(--border-strong);
-  padding: 14px 20px;
+  padding: 18px 16px;
   display: flex;
   gap: 12px;
   align-items: flex-end;
@@ -198,9 +198,9 @@ button:focus-visible {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   min-width: 0;
-  padding: 10px 12px;
+  padding: 13px 14px;
   border: 2px dashed #ccc;
   background: #fff;
   transition: border-color var(--transition-fast);
@@ -209,6 +209,7 @@ button:focus-visible {
 .path-group:focus-within {
   border-color: var(--color-ink);
   border-style: solid;
+  box-shadow: var(--shadow-input-focus);
 }
 
 .path-label {
@@ -241,6 +242,7 @@ button:focus-visible {
 
 .choose-btn {
   border: var(--border-strong);
+  border-radius: 2px;
   padding: 4px 12px;
   margin-top: 4px;
   font-size: 10px;
@@ -269,7 +271,7 @@ button:focus-visible {
 
 .cta-outer {
   background: var(--color-ink);
-  border-radius: 0;
+  border-radius: 2px;
   padding: 2px;
 }
 
@@ -278,7 +280,7 @@ button:focus-visible {
   background: var(--color-accent-blue);
   color: var(--color-ink);
   border: 2px solid var(--color-ink);
-  padding: 9px 20px;
+  padding: 13px 22px;
   font-family: var(--font-mono);
   font-size: 11px;
   text-transform: uppercase;
@@ -289,7 +291,7 @@ button:focus-visible {
   transition: transform var(--transition-fast);
 }
 
-.cta-outer:hover .cta-btn { transform: translate(4px, -4px); }
+.cta-outer:hover .cta-btn { transform: translate(7px, -7px); }
 .cta-outer:active .cta-btn { transform: none; }
 
 .cta-btn:disabled {
