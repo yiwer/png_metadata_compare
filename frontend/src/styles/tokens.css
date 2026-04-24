@@ -1,23 +1,47 @@
+/* frontend/src/styles/tokens.css */
 :root {
+  /* Backgrounds */
   --color-bg: #f4efea;
   --color-surface: #f8f8f7;
   --color-card: #ffffff;
+
+  /* Text / Ink */
   --color-ink: #383838;
+  --color-muted: #818181;
+  --color-disabled: #a1a1a1;
+
+  /* Accents */
   --color-accent-yellow: #ffde00;
   --color-accent-blue: #6fc2ff;
   --color-accent-red: #ff7169;
   --color-accent-green: #22c55e;
-  --color-muted: #706a63;
-  --border-strong: 3px solid var(--color-ink);
-  --shadow-panel: 8px 8px 0 0 var(--color-ink);
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-5: 1.5rem;
-  --space-6: 2rem;
-  --space-7: 3rem;
-  --radius-none: 0;
-  --font-ui: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
-  --transition-fast: 120ms ease;
+
+  /* Diff state backgrounds */
+  --color-diff-mod-bg: #fffde7;
+  --color-diff-add-bg: #e8f5e9;
+  --color-diff-rem-bg: #ffebe9;
+
+  /* Borders */
+  --border-strong: 2px solid var(--color-ink);
+  --border-light: 1px solid #f1f1f1;
+
+  /* Shadows — MotherDuck directional (left-down offset) */
+  --shadow-lift: var(--color-ink) -4px 4px 0px 0px;
+  --shadow-lift-sm: var(--color-ink) -2px 2px 0px 0px;
+  --shadow-input-focus: var(--color-accent-blue) -3px 3px 0px 0px;
+
+  /* Spacing (4px base) */
+  --space-1: 0.25rem;   /* 4px */
+  --space-2: 0.5rem;    /* 8px */
+  --space-3: 0.75rem;   /* 12px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.25rem;   /* 20px */
+  --space-6: 1.5rem;    /* 24px */
+
+  /* Typography */
+  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', 'Courier New', monospace;
+
+  /* Transitions */
+  --transition-fast: 0.12s ease-in-out;
+  --transition-card: 0.15s ease-out;
 }
