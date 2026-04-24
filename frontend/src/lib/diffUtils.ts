@@ -1,6 +1,7 @@
 // frontend/src/lib/diffUtils.ts
-import type { DiffNode, DiffStatus } from './types';
+import type { DiffNode, DiffStatus, DiffSummary } from './types';
 
+/** Only nodes with status !== 'unchanged' are included in the map. */
 export function buildDiffPathMap(node: DiffNode, map = new Map<string, DiffStatus>()): Map<string, DiffStatus> {
   if (node.status !== 'unchanged') {
     map.set(node.path, node.status);
@@ -11,6 +12,6 @@ export function buildDiffPathMap(node: DiffNode, map = new Map<string, DiffStatu
   return map;
 }
 
-export function totalDiffCount(summary: { modified: number; added: number; removed: number; reordered: number; error: number }): number {
+export function totalDiffCount(summary: DiffSummary): number {
   return summary.modified + summary.added + summary.removed + summary.reordered + summary.error;
 }

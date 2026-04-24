@@ -174,7 +174,7 @@ function SplitPanelContent({
       <div className="image-panel">
         <div className="image-frame">
           <img
-            src={`asset://localhost/${encodeURIComponent(filePath.replace(/\\/g, '/'))}`}
+            src={`asset://localhost/${filePath.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/')}`}
             alt={sideData.file_name}
             className="image-preview"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -191,7 +191,8 @@ function SplitPanelContent({
     );
   }
 
-  return null;
+  const _exhaustive: never = viewMode;
+  return _exhaustive;
 }
 
 function formatJson(raw: string): string {
