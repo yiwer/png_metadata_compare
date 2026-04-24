@@ -43,8 +43,8 @@ export function PairComparison({
 }) {
   const diffPathMap = pairResult ? buildDiffPathMap(pairResult.diff_root) : undefined;
   const changeCount = pairResult ? totalDiffCount(pairResult.diff_summary) : 0;
-  const leftLabel = pairResult?.left.file_name ?? 'Left';
-  const rightLabel = pairResult?.right.file_name ?? 'Right';
+  const leftLabel = pairResult?.left.file_name ?? '左';
+  const rightLabel = pairResult?.right.file_name ?? '右';
 
   return (
     <>
@@ -184,7 +184,7 @@ function SplitPanelContent({
           className="open-btn"
           onClick={() => void openPath(filePath)}
         >
-          Open Original ↗
+          打开原文件 ↗
         </button>
       </div>
     );
