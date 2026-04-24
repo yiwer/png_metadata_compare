@@ -3,24 +3,7 @@ use png_metadata_compare::inspection::{
     DirectorySummary, PairInspection, SideInspection, inspect_pair, inspect_single_side,
     scan_directory_summary,
 };
-use serde::Deserialize;
 use std::path::Path;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DesktopSide {
-    Left,
-    Right,
-}
-
-impl From<DesktopSide> for UnmatchedSide {
-    fn from(value: DesktopSide) -> Self {
-        match value {
-            DesktopSide::Left => UnmatchedSide::Left,
-            DesktopSide::Right => UnmatchedSide::Right,
-        }
-    }
-}
 
 #[tauri::command]
 pub fn compare_single(left_path: String, right_path: String) -> Result<PairInspection, String> {
@@ -36,13 +19,19 @@ pub fn scan_directory(left_dir: String, right_dir: String) -> Result<DirectorySu
 }
 
 #[tauri::command]
-pub fn inspect_single(path: String, side: DesktopSide) -> Result<SideInspection, String> {
-    Ok(inspect_single_side(Path::new(&path), side.into()))
+pub fn inspect_single(path: String, side: String) -> Result<SideInspection, String> {
+    let parsed_side = match side.as_str() {
+        "left" => UnmatchedSide::Left,
+        "right" => UnmatchedSide::Right,
+        _ => return Err(format!("unsupported side: {side}")),
+    };
+
+    Ok(inspect_single_side(Path::new(&path), parsed_side))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DesktopSide, compare_single, inspect_single, scan_directory};
+    use super::{compare_single, inspect_single, scan_directory};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -71,13 +60,24 @@ mod tests {
         let fixture = TestFixture::new("inspect_single");
         let left = fixture.write_png("left-only.png", r#"{"Title":"Solo"}"#);
 
-        let payload = inspect_single(left.display().to_string(), DesktopSide::Left)
+        let payload = inspect_single(left.display().to_string(), "left".to_string())
             .expect("inspect command should succeed");
 
         assert_eq!(payload.side, "left");
         assert_eq!(payload.file_path, left.display().to_string());
         assert_eq!(payload.raw_json.as_deref(), Some(r#"{"Title":"Solo"}"#));
         assert!(payload.error.is_none());
+    }
+
+    #[test]
+    fn inspect_single_rejects_unsupported_side_values() {
+        let fixture = TestFixture::new("inspect_single_invalid_side");
+        let left = fixture.write_png("left-only.png", r#"{"Title":"Solo"}"#);
+
+        let error = inspect_single(left.display().to_string(), "center".to_string())
+            .expect_err("inspect command should reject unsupported sides");
+
+        assert_eq!(error, "unsupported side: center");
     }
 
     #[test]
