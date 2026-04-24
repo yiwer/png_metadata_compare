@@ -17,6 +17,11 @@ button, input {
   color: inherit;
 }
 
+button:focus-visible {
+  outline: 3px solid var(--color-accent-blue);
+  outline-offset: 2px;
+}
+
 /* ── APP SHELL ── */
 .app-shell {
   display: flex;
@@ -83,7 +88,7 @@ button, input {
 
 .topbar-progress {
   font-size: 10px;
-  color: #818181;
+  color: var(--color-muted);
   letter-spacing: 0.5px;
 }
 
@@ -183,7 +188,7 @@ button, input {
 
 .cta-outer {
   background: var(--color-ink);
-  border-radius: 2px;
+  border-radius: 0;
   padding: 2px;
 }
 
@@ -450,7 +455,7 @@ button, input {
   position: relative;
   cursor: pointer;
   padding: 0;
-  transition: background 0.15s;
+  transition: background var(--transition-fast);
 }
 
 .diff-toggle--on { background: var(--color-accent-yellow); }
@@ -463,7 +468,7 @@ button, input {
   position: absolute;
   top: 1.5px;
   left: 1px;
-  transition: left 0.15s;
+  transition: left var(--transition-fast);
 }
 
 .diff-toggle--on .diff-toggle__knob { left: 17px; }
@@ -560,7 +565,7 @@ button, input {
   border-left: 2px solid transparent;
 }
 
-.diff-row--modified  { background: var(--color-diff-mod-bg); border-left-color: #e1c427; }
+.diff-row--modified  { background: var(--color-diff-mod-bg); border-left-color: var(--color-diff-modified); }
 .diff-row--added     { background: var(--color-diff-add-bg); border-left-color: var(--color-accent-green); }
 .diff-row--removed   { background: var(--color-diff-rem-bg); border-left-color: var(--color-accent-red); }
 .diff-row--reordered { background: #ebf9ff; border-left-color: var(--color-accent-blue); }
@@ -600,7 +605,7 @@ button, input {
   flex-shrink: 0;
 }
 
-.node-dot[data-status="modified"]  { background: #e1c427; }
+.node-dot[data-status="modified"]  { background: var(--color-diff-modified); }
 .node-dot[data-status="added"]     { background: var(--color-accent-green); }
 .node-dot[data-status="removed"]   { background: var(--color-accent-red); }
 .node-dot[data-status="reordered"] { background: var(--color-accent-blue); }
@@ -616,7 +621,7 @@ button, input {
   flex-shrink: 0;
 }
 
-.node-badge--modified  { color: #e1c427; }
+.node-badge--modified  { color: var(--color-diff-modified); }
 .node-badge--added     { color: var(--color-accent-green); }
 .node-badge--removed   { color: var(--color-accent-red); }
 .node-badge--reordered { color: var(--color-accent-blue); }

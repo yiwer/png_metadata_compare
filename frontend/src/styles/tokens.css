@@ -21,6 +21,9 @@
   --color-diff-add-bg: #e8f5e9;
   --color-diff-rem-bg: #ffebe9;
 
+  /* Diff accent colors */
+  --color-diff-modified: #e1c427;
+
   /* Borders */
   --border-strong: 2px solid var(--color-ink);
   --border-light: 1px solid #f1f1f1;
