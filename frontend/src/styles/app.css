@@ -29,6 +29,19 @@ button {
   cursor: pointer;
 }
 
+button:focus,
+[role='tab']:focus,
+[role='tabpanel']:focus {
+  outline: 3px solid var(--color-accent-blue);
+  outline-offset: 3px;
+}
+
+button:focus-visible,
+[role='tab']:focus-visible {
+  outline: 3px solid var(--color-accent-red);
+  outline-offset: 3px;
+}
+
 .app-shell {
   min-height: 100vh;
   padding: var(--space-5);
@@ -267,6 +280,11 @@ button {
 .analysis-panel ul {
   margin: var(--space-3) 0 0;
   line-height: 1.5;
+}
+
+.analysis-tabpanel {
+  display: grid;
+  gap: var(--space-4);
 }
 
 .analysis-panel ul {

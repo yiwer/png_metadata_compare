@@ -5,6 +5,7 @@ const resultRows = [
 ];
 
 const tabs = ['Diff', 'Left Metadata', 'Right Metadata', 'Raw JSON', 'Images'];
+const activeTab = 'Diff';
 
 export default function App() {
   return (
@@ -85,43 +86,59 @@ export default function App() {
 
           <nav className="tab-strip panel" aria-label="Analysis views">
             <div className="tablist" role="tablist" aria-label="Analysis views">
-              {tabs.map((tab, index) => (
-                <button
-                  key={tab}
-                  type="button"
-                  role="tab"
-                  aria-selected={index === 0}
-                  className={`tab-button${index === 0 ? ' is-active' : ''}`}
-                >
-                  {tab}
-                </button>
-              ))}
+              {tabs.map((tab) => {
+                const tabId = `analysis-tab-${tab.toLowerCase().replace(/\s+/g, '-')}`;
+                const panelId = `analysis-panel-${tab.toLowerCase().replace(/\s+/g, '-')}`;
+                const isActive = tab === activeTab;
+
+                return (
+                  <button
+                    key={tab}
+                    id={tabId}
+                    aria-controls={panelId}
+                    tabIndex={isActive ? 0 : -1}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    className={`tab-button${isActive ? ' is-active' : ''}`}
+                  >
+                    {tab}
+                  </button>
+                );
+              })}
             </div>
           </nav>
 
           <div className="analysis-row">
             <main className="analysis-main panel" aria-label="Analysis workspace">
-              <div className="panel-heading">
-                <span>Diff View</span>
-                <strong>12 changed fields</strong>
-              </div>
-              <div className="analysis-panels">
-                <section className="analysis-panel">
-                  <h2>Change Map</h2>
-                  <ul>
-                    <li>`metadata.stop_plate.serial` drift detected</li>
-                    <li>`text_chunks[2].value` removed on the right side</li>
-                    <li>`gamma` normalized during export</li>
-                  </ul>
-                </section>
-                <section className="analysis-panel">
-                  <h2>Workbench Notes</h2>
-                  <p>
-                    Static shell scaffold for the desktop workbench. Interactive data wiring
-                    arrives in later tasks.
-                  </p>
-                </section>
-              </div>
+              <section
+                id="analysis-panel-diff"
+                role="tabpanel"
+                aria-labelledby="analysis-tab-diff"
+                className="analysis-tabpanel"
+              >
+                <div className="panel-heading">
+                  <span>Diff View</span>
+                  <strong>12 changed fields</strong>
+                </div>
+                <div className="analysis-panels">
+                  <section className="analysis-panel">
+                    <h2>Change Map</h2>
+                    <ul>
+                      <li>`metadata.stop_plate.serial` drift detected</li>
+                      <li>`text_chunks[2].value` removed on the right side</li>
+                      <li>`gamma` normalized during export</li>
+                    </ul>
+                  </section>
+                  <section className="analysis-panel">
+                    <h2>Workbench Notes</h2>
+                    <p>
+                      Static shell scaffold for the desktop workbench. Interactive data wiring
+                      arrives in later tasks.
+                    </p>
+                  </section>
+                </div>
+              </section>
             </main>
 
             <aside className="inspector panel" aria-label="Detail inspector">

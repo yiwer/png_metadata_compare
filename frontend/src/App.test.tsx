@@ -17,4 +17,24 @@ describe('App shell', () => {
     expect(screen.getByRole('tab', { name: 'Raw JSON' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Images' })).toBeInTheDocument();
   });
+
+  it('wires the active tab to a tabpanel with roving tab focus', () => {
+    render(<App />);
+
+    const diffTab = screen.getByRole('tab', { name: 'Diff' });
+    const leftMetadataTab = screen.getByRole('tab', { name: 'Left Metadata' });
+    const tabPanel = screen.getByRole('tabpanel', { name: 'Diff' });
+
+    expect(diffTab).toHaveAttribute('id');
+    expect(diffTab).toHaveAttribute('aria-controls', tabPanel.id);
+    expect(diffTab).toHaveAttribute('tabindex', '0');
+    expect(diffTab).toHaveAttribute('aria-selected', 'true');
+
+    expect(leftMetadataTab).toHaveAttribute('id');
+    expect(leftMetadataTab).toHaveAttribute('aria-controls');
+    expect(leftMetadataTab).toHaveAttribute('tabindex', '-1');
+    expect(leftMetadataTab).toHaveAttribute('aria-selected', 'false');
+
+    expect(tabPanel).toHaveAttribute('aria-labelledby', diffTab.id);
+  });
 });
