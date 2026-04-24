@@ -689,11 +689,6 @@ impl eframe::App for PngMetadataCompareApp {
 }
 
 #[cfg(test)]
-pub(crate) fn run_compare_pipeline_builds_diff_and_counts_test() {
-    run_compare_pipeline_builds_diff_and_counts_impl();
-}
-
-#[cfg(test)]
 fn run_compare_pipeline_builds_diff_and_counts_impl() {
     use crate::diff::DiffStatus;
     use std::fs;

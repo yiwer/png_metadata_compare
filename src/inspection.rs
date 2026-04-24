@@ -59,7 +59,7 @@ pub struct BatchListItem {
     pub left_path: Option<String>,
     pub right_path: Option<String>,
     pub difference_count: usize,
-    pub match_strategy: Option<String>,
+    pub match_strategy: Option<MatchStrategy>,
     pub message: Option<String>,
 }
 
@@ -110,8 +110,8 @@ pub fn scan_directory_summary(left_dir: &Path, right_dir: &Path) -> DirectorySum
     }
 
     for pair in pairing.matched {
-        let inspection = inspect_pair(&pair.left.absolute_path, &pair.right.absolute_path);
-        let difference_count = inspection.diff_summary.total();
+        let diff_summary = compare_pair_summary(&pair.left.absolute_path, &pair.right.absolute_path);
+        let difference_count = diff_summary.total();
         let kind = if difference_count == 0 {
             counts.identical += 1;
             BatchListItemKind::Identical
@@ -132,10 +132,7 @@ pub fn scan_directory_summary(left_dir: &Path, right_dir: &Path) -> DirectorySum
             left_path: Some(pair.left.absolute_path.display().to_string()),
             right_path: Some(pair.right.absolute_path.display().to_string()),
             difference_count,
-            match_strategy: Some(match pair.match_strategy {
-                MatchStrategy::FileName => "file_name".to_string(),
-                MatchStrategy::FileNameAndParentDir => "file_name_and_parent_dir".to_string(),
-            }),
+            match_strategy: Some(pair.match_strategy),
             message: None,
         });
     }
@@ -187,6 +184,16 @@ pub fn scan_directory_summary(left_dir: &Path, right_dir: &Path) -> DirectorySum
 
 fn load_side(side: &'static str, path: &Path) -> LoadedSide {
     side_from_raw(side, path, extract_stop_plate_metadata_from_file(path))
+}
+
+fn compare_pair_summary(left_path: &Path, right_path: &Path) -> DiffSummary {
+    let left_raw = extract_stop_plate_metadata_from_file(left_path);
+    let right_raw = extract_stop_plate_metadata_from_file(right_path);
+    let left_metadata = load_metadata(left_raw);
+    let right_metadata = load_metadata(right_raw);
+    let diff_root = compare_metadata(&left_metadata, &right_metadata);
+    let change_list = flatten_changes(&diff_root);
+    summarize_service_changes(&change_list)
 }
 
 fn side_from_raw(side: &'static str, path: &Path, raw: Result<String, CompareError>) -> LoadedSide {
@@ -276,8 +283,11 @@ fn is_descendant_path(parent: &str, child: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{BatchListItemKind, inspect_pair, inspect_single_side, scan_directory_summary};
-    use crate::batch_report::UnmatchedSide;
+    use super::{
+        BatchListItemKind, compare_pair_summary, inspect_pair, inspect_single_side,
+        scan_directory_summary,
+    };
+    use crate::batch_report::{MatchStrategy, UnmatchedSide};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -354,6 +364,34 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn compare_pair_summary_matches_pair_inspection_diff_summary() {
+        let fixture = TestFixture::new("pair_summary");
+        let left = fixture.write_png("left.png", r#"{"Title":"Left"}"#);
+        let right = fixture.write_png("right.png", r#"{"Title":"Right"}"#);
+
+        let inspection = inspect_pair(&left, &right);
+        let summary = compare_pair_summary(&left, &right);
+
+        assert_eq!(summary, inspection.diff_summary);
+    }
+
+    #[test]
+    fn scan_directory_summary_uses_typed_match_strategy() {
+        let fixture = BatchFixture::new("typed_strategy");
+        fixture.write_left_png("dup.png", "route-a", r#"{"Title":"Left A"}"#);
+        fixture.write_left_png("dup.png", "route-b", r#"{"Title":"Left B"}"#);
+        fixture.write_right_png("dup.png", "route-b", r#"{"Title":"Right B"}"#);
+        fixture.write_right_png("dup.png", "route-a", r#"{"Title":"Right A"}"#);
+
+        let payload = scan_directory_summary(fixture.left_dir(), fixture.right_dir());
+
+        assert!(payload.items.iter().all(|item| {
+            item.kind != BatchListItemKind::Different
+                || item.match_strategy == Some(MatchStrategy::FileNameAndParentDir)
+        }));
     }
 
     struct TestFixture {

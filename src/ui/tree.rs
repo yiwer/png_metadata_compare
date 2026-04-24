@@ -202,11 +202,6 @@ fn first_directly_visible_path(node: &DiffNode, filters: &TreeFilters) -> Option
 }
 
 #[cfg(test)]
-pub(crate) fn hides_unchanged_nodes_when_only_differences_is_enabled_test() {
-    tests::hides_unchanged_nodes_when_only_differences_is_enabled();
-}
-
-#[cfg(test)]
 mod tests {
     use super::{
         draw_tree_from_parts, reconcile_selected_path, reconcile_selected_path_for,
