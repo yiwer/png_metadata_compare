@@ -24,13 +24,15 @@ export default function App() {
             </button>
           </div>
           <div className="action-toolbar" role="toolbar" aria-label="Compare actions">
+            <button type="button" className="toolbar-button toolbar-button--muted">
+              Choose Left
+            </button>
+            <button type="button" className="toolbar-button toolbar-button--muted">
+              Choose Right
+            </button>
             <button type="button" className="toolbar-button">
               Compare
             </button>
-            <button type="button" className="toolbar-button toolbar-button--muted">
-              Swap
-            </button>
-            <span className="filter-pill">Only Differences</span>
           </div>
         </div>
       </header>
