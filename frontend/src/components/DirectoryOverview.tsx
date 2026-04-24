@@ -111,7 +111,7 @@ export function DirectoryOverview({
               {f.label}
             </button>
           ))}
-          <span className="filter-count">{filteredItems.length} files</span>
+          <span className="filter-count">{filteredItems.length} 个文件</span>
         </div>
       )}
 
