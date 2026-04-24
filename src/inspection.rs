@@ -335,6 +335,27 @@ mod tests {
             .any(|item| item.kind == BatchListItemKind::LeftOnly));
     }
 
+    #[test]
+    fn scan_directory_summary_counts_each_scan_issue_once() {
+        let fixture = BatchFixture::new("scan_issue");
+        fixture.write_left_png("same.png", "shared", r#"{"Title":"Same"}"#);
+        fixture.write_right_png("same.png", "shared", r#"{"Title":"Same"}"#);
+        let invalid_right = fixture.root.join("not-a-directory.png");
+        fs::write(&invalid_right, b"not a directory").unwrap();
+
+        let payload = scan_directory_summary(fixture.left_dir(), &invalid_right);
+
+        assert_eq!(payload.counts.error, 1);
+        assert_eq!(
+            payload
+                .items
+                .iter()
+                .filter(|item| item.kind == BatchListItemKind::Error)
+                .count(),
+            1
+        );
+    }
+
     struct TestFixture {
         root: PathBuf,
     }
