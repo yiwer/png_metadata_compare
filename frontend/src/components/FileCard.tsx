@@ -12,17 +12,19 @@ const STATUS_LABEL: Record<BatchListItemKind, string> = {
 export function FileCard({
   item,
   style,
+  disabled,
   onClick,
 }: {
   item: BatchListItem;
   style?: React.CSSProperties;
+  disabled?: boolean;
   onClick(): void;
 }) {
   const label = STATUS_LABEL[item.kind];
   const metaText = cardMeta(item);
 
   return (
-    <button type="button" className={`file-card file-card--${item.kind}`} style={style} onClick={onClick}>
+    <button type="button" className={`file-card file-card--${item.kind}${disabled ? ' file-card--disabled' : ''}`} style={style} disabled={disabled} onClick={onClick}>
       <div className="card-header">
         <span className={`status-dot status-dot--${item.kind}`} />
         {label}

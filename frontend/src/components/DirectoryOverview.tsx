@@ -117,8 +117,8 @@ export function DirectoryOverview({
       )}
 
       <div className="card-grid">
-        {filteredItems.length === 0 && directorySummary && (
-          <EmptyState title="No results" body="No files match the selected filter." />
+        {isLoading && !directorySummary && (
+          <EmptyState title="Scanning…" body="Finding and comparing PNG files…" />
         )}
         {!directorySummary && !isLoading && (
           <EmptyState
@@ -126,16 +126,16 @@ export function DirectoryOverview({
             body="All PNG files found in both directories will be compared and shown here."
           />
         )}
+        {filteredItems.length === 0 && directorySummary && !isLoading && (
+          <EmptyState title="No results" body="No files match the selected filter." />
+        )}
         {filteredItems.map((item, index) => (
           <FileCard
             key={item.id}
             item={item}
             style={{ animationDelay: `${Math.min(index * 30, 300)}ms` }}
-            onClick={() => {
-              if (item.left_path && item.right_path) {
-                onSelectItem(item);
-              }
-            }}
+            disabled={!item.left_path || !item.right_path}
+            onClick={() => onSelectItem(item)}
           />
         ))}
       </div>
