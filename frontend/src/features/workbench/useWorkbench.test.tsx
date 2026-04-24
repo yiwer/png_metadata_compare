@@ -1,182 +1,118 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useWorkbench } from './useWorkbench';
-import type {
-  DirectorySummary,
-  PairInspection,
-  SideInspection,
-} from '../../lib/types';
 import type { WorkbenchApi } from '../../lib/api';
+import type { PairInspection, DirectorySummary } from '../../lib/types';
+
+const mockInspection: PairInspection = {
+  left: { side: 'left', file_path: '/a.png', file_name: 'a.png', raw_json: null, metadata: null, error: null },
+  right: { side: 'right', file_path: '/b.png', file_name: 'b.png', raw_json: null, metadata: null, error: null },
+  diff_root: { path: '', status: 'unchanged', left_value: null, right_value: null, summary: 'root', children: [] },
+  diff_summary: { modified: 0, added: 0, removed: 0, reordered: 0, error: 0 },
+  default_selected_path: null,
+};
+
+const mockSummary: DirectorySummary = {
+  counts: { identical: 1, different: 2, left_only: 0, right_only: 0, error: 0 },
+  items: [
+    { id: '1', kind: 'different', label: 'a.png', left_path: '/l/a.png', right_path: '/r/a.png', difference_count: 1, match_strategy: 'file_name', message: null },
+    { id: '2', kind: 'different', label: 'b.png', left_path: '/l/b.png', right_path: '/r/b.png', difference_count: 2, match_strategy: 'file_name', message: null },
+    { id: '3', kind: 'identical', label: 'c.png', left_path: '/l/c.png', right_path: '/r/c.png', difference_count: 0, match_strategy: 'file_name', message: null },
+  ],
+};
+
+function makeApi(overrides: Partial<WorkbenchApi> = {}): WorkbenchApi {
+  return {
+    compareSingle: vi.fn().mockResolvedValue(mockInspection),
+    scanDirectory: vi.fn().mockResolvedValue(mockSummary),
+    inspectSingle: vi.fn().mockResolvedValue({}),
+    ...overrides,
+  };
+}
 
 describe('useWorkbench', () => {
-  it('keeps mode-specific inputs and synchronizes active result inspection state', async () => {
-    const pairInspection: PairInspection = {
-      left: {
-        side: 'left',
-        file_path: 'C:/left/a.png',
-        file_name: 'a.png',
-        raw_json: '{"Title":"Left"}',
-        metadata: { Title: 'Left' },
-        error: null,
-      },
-      right: {
-        side: 'right',
-        file_path: 'C:/right/a.png',
-        file_name: 'a.png',
-        raw_json: '{"Title":"Right"}',
-        metadata: { Title: 'Right' },
-        error: null,
-      },
-      diff_root: {
-        path: 'StopPlateMetadata',
-        status: 'modified',
-        left_value: null,
-        right_value: null,
-        summary: 'StopPlateMetadata modified',
-        children: [],
-      },
-      diff_summary: {
-        modified: 1,
-        added: 0,
-        removed: 0,
-        reordered: 0,
-        error: 0,
-      },
-      default_selected_path: 'StopPlateMetadata.Title',
-    };
-
-    const leftOnlyInspection: SideInspection = {
-      side: 'left',
-      file_path: 'C:/left/only.png',
-      file_name: 'only.png',
-      raw_json: '{"Title":"Only"}',
-      metadata: { Title: 'Only' },
-      error: null,
-    };
-
-    const directorySummary: DirectorySummary = {
-      counts: {
-        identical: 1,
-        different: 1,
-        left_only: 1,
-        right_only: 0,
-        error: 0,
-      },
-      items: [
-        {
-          id: 'different-1',
-          kind: 'different',
-          label: 'diff.png',
-          left_path: 'C:/left/diff.png',
-          right_path: 'C:/right/diff.png',
-          difference_count: 3,
-          match_strategy: 'file_name',
-          message: null,
-        },
-        {
-          id: 'identical-1',
-          kind: 'identical',
-          label: 'same.png',
-          left_path: 'C:/left/same.png',
-          right_path: 'C:/right/same.png',
-          difference_count: 0,
-          match_strategy: 'file_name',
-          message: null,
-        },
-        {
-          id: 'left-only-1',
-          kind: 'left_only',
-          label: 'only.png',
-          left_path: 'C:/left/only.png',
-          right_path: null,
-          difference_count: 0,
-          match_strategy: null,
-          message: 'Missing on right',
-        },
-      ],
-    };
-
-    const api: WorkbenchApi = {
-      compareSingle: vi.fn().mockResolvedValue(pairInspection),
-      scanDirectory: vi.fn().mockResolvedValue(directorySummary),
-      inspectSingle: vi.fn().mockResolvedValue(leftOnlyInspection),
-    };
-
-    const { result } = renderHook(() => useWorkbench(api));
-
-    act(() => {
-      result.current.setLeftInput('C:/left/single.png');
-      result.current.setRightInput('C:/right/single.png');
-    });
-
-    await act(async () => {
-      await result.current.runCompare();
-    });
-
-    expect(api.compareSingle).toHaveBeenCalledWith('C:/left/single.png', 'C:/right/single.png');
+  it('starts in single mode, pair-comparison view', () => {
+    const { result } = renderHook(() => useWorkbench(makeApi()));
     expect(result.current.mode).toBe('single');
-    expect(result.current.activeInspection).toEqual(pairInspection);
-    expect(result.current.activeSingleSideInspection).toBeNull();
-    expect(result.current.activeNodePath).toBe('StopPlateMetadata.Title');
-    expect(result.current.activeTab).toBe('diff');
+    expect(result.current.view).toBe('pair-comparison');
+  });
 
-    act(() => {
-      result.current.setMode('directory');
-    });
+  it('switching mode resets state', () => {
+    const { result } = renderHook(() => useWorkbench(makeApi()));
+    act(() => { result.current.setMode('directory'); });
+    expect(result.current.mode).toBe('directory');
+    expect(result.current.view).toBe('directory-overview');
+    expect(result.current.pairResult).toBeNull();
+  });
 
-    expect(result.current.leftInput).toBe('');
-    expect(result.current.rightInput).toBe('');
-    expect(result.current.activeInspection).toBeNull();
-    expect(result.current.activeSingleSideInspection).toBeNull();
-    expect(result.current.directorySummary).toBeNull();
+  it('runCompare (single) calls compareSingle and sets pairResult', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setLeftInput('/a.png'); result.current.setRightInput('/b.png'); });
+    await act(async () => { await result.current.runCompare(); });
+    expect(api.compareSingle).toHaveBeenCalledWith('/a.png', '/b.png');
+    expect(result.current.pairResult).toBe(mockInspection);
+    expect(result.current.view).toBe('pair-comparison');
+  });
 
-    act(() => {
-      result.current.setLeftInput('C:/left-dir');
-      result.current.setRightInput('C:/right-dir');
-    });
+  it('runCompare (directory) calls scanDirectory and sets view to directory-overview', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
+    await act(async () => { await result.current.runCompare(); });
+    expect(api.scanDirectory).toHaveBeenCalledWith('/left', '/right');
+    expect(result.current.view).toBe('directory-overview');
+    expect(result.current.directorySummary).toBe(mockSummary);
+  });
 
+  it('activeFilter filters items client-side', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    await act(async () => { await result.current.runCompare(); });
+    expect(result.current.filteredItems).toHaveLength(3);
+    act(() => { result.current.setActiveFilter('different'); });
+    expect(result.current.filteredItems).toHaveLength(2);
+    act(() => { result.current.setActiveFilter('identical'); });
+    expect(result.current.filteredItems).toHaveLength(1);
+  });
+
+  it('navigateToPair sets directoryContext index among different items', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    await act(async () => { await result.current.runCompare(); });
     await act(async () => {
-      await result.current.runCompare();
+      await result.current.navigateToPair(mockSummary.items[1]); // second 'different' item
     });
+    expect(result.current.directoryContext).toEqual({ index: 2, totalDifferent: 2 });
+    expect(result.current.view).toBe('pair-comparison');
+  });
 
-    await waitFor(() => {
-      expect(result.current.activeResultItem?.id).toBe('different-1');
-    });
+  it('goBackToDirectory resets view and pairResult', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    await act(async () => { await result.current.runCompare(); });
+    await act(async () => { await result.current.navigateToPair(mockSummary.items[0]); });
+    act(() => { result.current.goBackToDirectory(); });
+    expect(result.current.view).toBe('directory-overview');
+    expect(result.current.pairResult).toBeNull();
+  });
 
-    expect(api.scanDirectory).toHaveBeenCalledWith('C:/left-dir', 'C:/right-dir');
-    expect(api.compareSingle).toHaveBeenLastCalledWith('C:/left/diff.png', 'C:/right/diff.png');
-    expect(result.current.directorySummary).toEqual(directorySummary);
-    expect(result.current.activeInspection).toEqual(pairInspection);
-    expect(result.current.activeSingleSideInspection).toBeNull();
-    expect(result.current.activeNodePath).toBe('StopPlateMetadata.Title');
-    expect(result.current.activeTab).toBe('diff');
+  it('runCompare sets error on failure', async () => {
+    const api = makeApi({ compareSingle: vi.fn().mockRejectedValue(new Error('parse failed')) });
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setLeftInput('/a.png'); result.current.setRightInput('/b.png'); });
+    await act(async () => { await result.current.runCompare(); });
+    expect(result.current.error).toBe('parse failed');
+  });
 
-    await act(async () => {
-      await result.current.selectResultItem('left-only-1');
-    });
-
-    expect(api.inspectSingle).toHaveBeenCalledWith('C:/left/only.png', 'left');
-    expect(result.current.activeResultItem?.id).toBe('left-only-1');
-    expect(result.current.activeInspection).toBeNull();
-    expect(result.current.activeSingleSideInspection).toEqual(leftOnlyInspection);
-    expect(result.current.activeTab).toBe('left_metadata');
-    expect(result.current.activeNodePath).toBeNull();
-
-    await act(async () => {
-      await result.current.selectResultItem('identical-1');
-    });
-
-    expect(api.compareSingle).toHaveBeenLastCalledWith('C:/left/same.png', 'C:/right/same.png');
-    expect(result.current.activeInspection).toEqual(pairInspection);
-    expect(result.current.activeSingleSideInspection).toBeNull();
-    expect(result.current.activeTab).toBe('left_metadata');
-
-    act(() => {
-      result.current.setMode('single');
-    });
-
-    expect(result.current.leftInput).toBe('C:/left/single.png');
-    expect(result.current.rightInput).toBe('C:/right/single.png');
-    expect(result.current.directorySummary).toBeNull();
-    expect(result.current.activeResultItem).toBeNull();
+  it('toggleDiffHighlight flips diffHighlight', () => {
+    const { result } = renderHook(() => useWorkbench(makeApi()));
+    expect(result.current.diffHighlight).toBe(true);
+    act(() => { result.current.toggleDiffHighlight(); });
+    expect(result.current.diffHighlight).toBe(false);
   });
 });
