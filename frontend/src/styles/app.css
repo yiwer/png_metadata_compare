@@ -15,6 +15,7 @@ body {
 button, input {
   font: inherit;
   color: inherit;
+  -webkit-app-region: no-drag;
 }
 
 button:focus-visible {
@@ -138,7 +139,6 @@ button:focus-visible {
   align-items: center;
   border: 1px solid rgba(255,255,255,0.18);
   height: 26px;
-  overflow: hidden;
 }
 
 .mode-toggle-sep {

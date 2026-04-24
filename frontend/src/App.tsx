@@ -32,7 +32,7 @@ export default function App() {
 
   const progressLabel =
     wb.directoryContext
-      ? `${wb.directoryContext.index} / ${wb.directoryContext.totalDifferent} different`
+      ? `${wb.directoryContext.index} / ${wb.directoryContext.totalDifferent} 个差异`
       : null;
 
   const showModeToggle = wb.view === 'directory-overview' || wb.directoryContext === null;

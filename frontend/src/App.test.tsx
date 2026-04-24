@@ -3,6 +3,9 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import App from './App';
 
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: vi.fn(() => ({ onCloseRequested: vi.fn() })),
+}));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openPath: vi.fn() }));
 vi.mock('./lib/api', () => ({
@@ -21,7 +24,7 @@ describe('App', () => {
 
   it('renders mode toggle buttons', () => {
     render(<App />);
-    expect(screen.getByText('Single File')).toBeTruthy();
-    expect(screen.getByText('Directory')).toBeTruthy();
+    expect(screen.getByText('单文件')).toBeTruthy();
+    expect(screen.getByText('目录')).toBeTruthy();
   });
 });
