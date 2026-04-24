@@ -1,0 +1,23 @@
+:root {
+  --color-bg: #f4efea;
+  --color-surface: #f8f8f7;
+  --color-card: #ffffff;
+  --color-ink: #383838;
+  --color-accent-yellow: #ffde00;
+  --color-accent-blue: #6fc2ff;
+  --color-accent-red: #ff7169;
+  --color-accent-green: #22c55e;
+  --color-muted: #706a63;
+  --border-strong: 3px solid var(--color-ink);
+  --shadow-panel: 8px 8px 0 0 var(--color-ink);
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --radius-none: 0;
+  --font-ui: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
+  --transition-fast: 120ms ease;
+}
