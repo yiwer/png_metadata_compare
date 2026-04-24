@@ -21,9 +21,20 @@ describe('App shell', () => {
   it('wires the active tab to a tabpanel with roving tab focus', () => {
     render(<App />);
 
+    const tabs = screen.getAllByRole('tab');
     const diffTab = screen.getByRole('tab', { name: 'Diff' });
     const leftMetadataTab = screen.getByRole('tab', { name: 'Left Metadata' });
     const tabPanel = screen.getByRole('tabpanel', { name: 'Diff' });
+
+    for (const tab of tabs) {
+      const controlsId = tab.getAttribute('aria-controls');
+      expect(controlsId).toBeTruthy();
+
+      const controlledPanel = document.getElementById(controlsId!);
+      expect(controlledPanel).not.toBeNull();
+      expect(controlledPanel).toHaveAttribute('role', 'tabpanel');
+      expect(controlledPanel).toHaveAttribute('aria-labelledby', tab.id);
+    }
 
     expect(diffTab).toHaveAttribute('id');
     expect(diffTab).toHaveAttribute('aria-controls', tabPanel.id);

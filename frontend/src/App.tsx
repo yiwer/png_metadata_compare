@@ -6,6 +6,28 @@ const resultRows = [
 
 const tabs = ['Diff', 'Left Metadata', 'Right Metadata', 'Raw JSON', 'Images'];
 const activeTab = 'Diff';
+const panelPlaceholders: Record<string, { title: string; body: string }> = {
+  Diff: {
+    title: 'Diff View',
+    body: 'Static shell scaffold for the desktop workbench. Interactive data wiring arrives in later tasks.',
+  },
+  'Left Metadata': {
+    title: 'Left Metadata',
+    body: 'Placeholder metadata browser for the selected left-side PNG payload.',
+  },
+  'Right Metadata': {
+    title: 'Right Metadata',
+    body: 'Placeholder metadata browser for the selected right-side PNG payload.',
+  },
+  'Raw JSON': {
+    title: 'Raw JSON',
+    body: 'Placeholder raw payload viewer for comparing extracted JSON side by side.',
+  },
+  Images: {
+    title: 'Images',
+    body: 'Placeholder full-size image review panel for expanded visual inspection.',
+  },
+};
 
 export default function App() {
   return (
@@ -111,34 +133,57 @@ export default function App() {
 
           <div className="analysis-row">
             <main className="analysis-main panel" aria-label="Analysis workspace">
-              <section
-                id="analysis-panel-diff"
-                role="tabpanel"
-                aria-labelledby="analysis-tab-diff"
-                className="analysis-tabpanel"
-              >
-                <div className="panel-heading">
-                  <span>Diff View</span>
-                  <strong>12 changed fields</strong>
-                </div>
-                <div className="analysis-panels">
-                  <section className="analysis-panel">
-                    <h2>Change Map</h2>
-                    <ul>
-                      <li>`metadata.stop_plate.serial` drift detected</li>
-                      <li>`text_chunks[2].value` removed on the right side</li>
-                      <li>`gamma` normalized during export</li>
-                    </ul>
+              {tabs.map((tab) => {
+                const panelId = `analysis-panel-${tab.toLowerCase().replace(/\s+/g, '-')}`;
+                const tabId = `analysis-tab-${tab.toLowerCase().replace(/\s+/g, '-')}`;
+                const isActive = tab === activeTab;
+                const placeholder = panelPlaceholders[tab];
+
+                return (
+                  <section
+                    key={tab}
+                    id={panelId}
+                    role="tabpanel"
+                    aria-labelledby={tabId}
+                    className="analysis-tabpanel"
+                    hidden={!isActive}
+                  >
+                    {isActive ? (
+                      <>
+                        <div className="panel-heading">
+                          <span>Diff View</span>
+                          <strong>12 changed fields</strong>
+                        </div>
+                        <div className="analysis-panels">
+                          <section className="analysis-panel">
+                            <h2>Change Map</h2>
+                            <ul>
+                              <li>`metadata.stop_plate.serial` drift detected</li>
+                              <li>`text_chunks[2].value` removed on the right side</li>
+                              <li>`gamma` normalized during export</li>
+                            </ul>
+                          </section>
+                          <section className="analysis-panel">
+                            <h2>Workbench Notes</h2>
+                            <p>{placeholder.body}</p>
+                          </section>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="panel-heading">
+                          <span>{placeholder.title}</span>
+                          <strong>Scaffold placeholder</strong>
+                        </div>
+                        <section className="analysis-panel">
+                          <h2>{placeholder.title}</h2>
+                          <p>{placeholder.body}</p>
+                        </section>
+                      </>
+                    )}
                   </section>
-                  <section className="analysis-panel">
-                    <h2>Workbench Notes</h2>
-                    <p>
-                      Static shell scaffold for the desktop workbench. Interactive data wiring
-                      arrives in later tasks.
-                    </p>
-                  </section>
-                </div>
-              </section>
+                );
+              })}
             </main>
 
             <aside className="inspector panel" aria-label="Detail inspector">
