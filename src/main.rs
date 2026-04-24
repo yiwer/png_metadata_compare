@@ -1,10 +1,14 @@
-use png_metadata_compare::app::PngMetadataCompareApp;
+#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 
-fn main() -> eframe::Result<()> {
-    let options = eframe::NativeOptions::default();
-    eframe::run_native(
-        "PNG Metadata Compare",
-        options,
-        Box::new(|_cc| Ok(Box::new(PngMetadataCompareApp::default()))),
-    )
+mod desktop_api;
+
+fn main() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            desktop_api::compare_single,
+            desktop_api::scan_directory,
+            desktop_api::inspect_single
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
