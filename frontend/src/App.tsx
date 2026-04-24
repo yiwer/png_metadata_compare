@@ -40,38 +40,48 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        {/* Left: brand + back */}
+        {/* Left: brand + separator + mode toggle (when visible) + back */}
         <div className="topbar-left">
-          {wb.view === 'pair-comparison' && wb.directoryContext && (
-            <button type="button" className="back-btn" onClick={wb.goBackToDirectory}>
-              ← Directory
-            </button>
-          )}
           <span className="brand">PNG ⌁ Compare</span>
+
+          {showModeToggle && (
+            <>
+              <div className="topbar-vsep" />
+              <div className="mode-toggle" role="group" aria-label="模式">
+                <button
+                  type="button"
+                  className={`mode-btn${wb.mode === 'single' ? ' mode-btn--active' : ''}`}
+                  onClick={() => wb.setMode('single')}
+                >
+                  单文件
+                </button>
+                <div className="mode-toggle-sep" />
+                <button
+                  type="button"
+                  className={`mode-btn${wb.mode === 'directory' ? ' mode-btn--active' : ''}`}
+                  onClick={() => wb.setMode('directory')}
+                >
+                  目录
+                </button>
+              </div>
+            </>
+          )}
+
+          {wb.view === 'pair-comparison' && wb.directoryContext && (
+            <>
+              <div className="topbar-vsep" />
+              <button type="button" className="back-btn" onClick={wb.goBackToDirectory}>
+                ← 返回目录
+              </button>
+            </>
+          )}
         </div>
 
-        {/* Center: mode toggle or filename — drag on empty space */}
+        {/* Center: filename or progress — pure drag region */}
         <div className="topbar-center">
-          {showModeToggle ? (
-            <div className="mode-toggle" role="group" aria-label="Mode">
-              <button
-                type="button"
-                className={`mode-btn${wb.mode === 'single' ? ' mode-btn--active' : ''}`}
-                onClick={() => wb.setMode('single')}
-              >
-                Single File
-              </button>
-              <button
-                type="button"
-                className={`mode-btn${wb.mode === 'directory' ? ' mode-btn--active' : ''}`}
-                onClick={() => wb.setMode('directory')}
-              >
-                Directory
-              </button>
-            </div>
-          ) : wb.pairResult ? (
+          {!showModeToggle && wb.pairResult ? (
             <span className="topbar-filename">{wb.pairResult.left.file_name}</span>
-          ) : progressLabel ? (
+          ) : !showModeToggle && progressLabel ? (
             <span className="topbar-progress">{progressLabel}</span>
           ) : null}
         </div>
@@ -79,9 +89,9 @@ export default function App() {
         {/* Right: window controls */}
         <div className="topbar-right">
           <div className="win-controls">
-            <button type="button" className="win-btn" onClick={() => void win.minimize()} aria-label="Minimize">─</button>
-            <button type="button" className="win-btn" onClick={() => void win.toggleMaximize()} aria-label="Maximize">□</button>
-            <button type="button" className="win-btn win-btn--close" onClick={() => void win.close()} aria-label="Close">✕</button>
+            <button type="button" className="win-btn" onClick={() => void win.minimize()} aria-label="最小化">─</button>
+            <button type="button" className="win-btn" onClick={() => void win.toggleMaximize()} aria-label="最大化">□</button>
+            <button type="button" className="win-btn win-btn--close" onClick={() => void win.close()} aria-label="关闭">✕</button>
           </div>
         </div>
       </header>

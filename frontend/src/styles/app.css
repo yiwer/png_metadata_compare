@@ -97,6 +97,13 @@ button:focus-visible {
   color: #fff;
 }
 
+.topbar-vsep {
+  width: 1px;
+  height: 20px;
+  background: rgba(255,255,255,0.20);
+  flex-shrink: 0;
+}
+
 .back-btn {
   background: none;
   border: none;
@@ -125,31 +132,55 @@ button:focus-visible {
   letter-spacing: 0.5px;
 }
 
-/* Mode toggle in topbar — centered, prominent */
-.mode-toggle { display: flex; }
-
-.mode-btn {
-  padding: 10px 28px;
-  border: 2px solid rgba(255,255,255,0.35);
-  background: transparent;
-  color: rgba(255,255,255,0.6);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  text-transform: uppercase;
-  cursor: pointer;
-  letter-spacing: 1.5px;
-  font-weight: 600;
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
-  -webkit-app-region: no-drag;
+/* ── MODE TOGGLE ── */
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(255,255,255,0.18);
+  height: 26px;
+  overflow: hidden;
 }
 
-.mode-btn:first-child { border-right-width: 0; }
-.mode-btn:hover { color: #fff; border-color: rgba(255,255,255,0.6); }
+.mode-toggle-sep {
+  width: 1px;
+  height: 100%;
+  background: rgba(255,255,255,0.18);
+  flex-shrink: 0;
+}
+
+.mode-btn {
+  padding: 0 12px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.45);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  font-weight: 600;
+  cursor: pointer;
+  position: relative;
+  -webkit-app-region: no-drag;
+  transition: color var(--transition-fast);
+}
+
+.mode-btn:hover {
+  color: rgba(255,255,255,0.75);
+}
 
 .mode-btn--active {
+  color: #fff;
+}
+
+.mode-btn--active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 4px;
+  right: 4px;
+  height: 2px;
   background: var(--color-accent-yellow);
-  color: var(--color-ink);
-  border-color: var(--color-accent-yellow);
 }
 
 /* ── TOOLBAR ── */
