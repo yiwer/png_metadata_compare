@@ -48,6 +48,7 @@ button:focus-visible {
   padding: 0 20px;
   min-width: 180px;
   cursor: default;
+  -webkit-app-region: drag;
 }
 
 .topbar-center {
@@ -56,6 +57,7 @@ button:focus-visible {
   align-items: center;
   justify-content: center;
   cursor: default;
+  -webkit-app-region: drag;
 }
 
 .topbar-right {
@@ -64,6 +66,7 @@ button:focus-visible {
   min-width: 180px;
   justify-content: flex-end;
   cursor: default;
+  -webkit-app-region: drag;
 }
 
 /* Window controls */

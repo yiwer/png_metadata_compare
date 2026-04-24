@@ -41,7 +41,7 @@ export default function App() {
     <div className="app-shell">
       <header className="topbar">
         {/* Left: brand + separator + mode toggle (when visible) + back */}
-        <div className="topbar-left">
+        <div className="topbar-left" data-tauri-drag-region>
           <span className="brand">PNG ⌁ Compare</span>
 
           {showModeToggle && (
@@ -78,7 +78,7 @@ export default function App() {
         </div>
 
         {/* Center: filename or progress — pure drag region */}
-        <div className="topbar-center">
+        <div className="topbar-center" data-tauri-drag-region>
           {!showModeToggle && wb.pairResult ? (
             <span className="topbar-filename">{wb.pairResult.left.file_name}</span>
           ) : !showModeToggle && progressLabel ? (
@@ -87,7 +87,7 @@ export default function App() {
         </div>
 
         {/* Right: window controls */}
-        <div className="topbar-right">
+        <div className="topbar-right" data-tauri-drag-region>
           <div className="win-controls">
             <button type="button" className="win-btn" onClick={() => void win.minimize()} aria-label="最小化">─</button>
             <button type="button" className="win-btn" onClick={() => void win.toggleMaximize()} aria-label="最大化">□</button>
