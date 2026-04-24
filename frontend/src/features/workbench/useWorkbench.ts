@@ -26,6 +26,10 @@ function defaultTabForSingleSide(side: Side): AnalysisTab {
   return side === 'left' ? 'left_metadata' : 'right_metadata';
 }
 
+function defaultTabForPairItem(item: BatchListItem | null): AnalysisTab {
+  return item?.kind === 'different' ? 'diff' : 'left_metadata';
+}
+
 function formatError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -45,6 +49,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   const [activeTab, setActiveTab] = useState<AnalysisTab>(DEFAULT_TAB);
   const [activeNodePath, setActiveNodePath] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   const activeInputs = inputsByMode[mode];
@@ -56,6 +61,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     setActiveSingleSideInspection(null);
     setActiveTab(DEFAULT_TAB);
     setActiveNodePath(null);
+    setLoadingMessage(null);
     setErrorBanner(null);
   }
 
@@ -98,7 +104,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
       const inspection = await api.compareSingle(item.left_path, item.right_path);
       setActiveInspection(inspection);
       setActiveSingleSideInspection(null);
-      setActiveTab(DEFAULT_TAB);
+      setActiveTab(defaultTabForPairItem(item));
       setActiveNodePath(inspection.default_selected_path);
       return;
     }
@@ -123,6 +129,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     }
 
     setIsLoading(true);
+    setLoadingMessage(`Loading ${item.label}...`);
     setErrorBanner(null);
 
     try {
@@ -131,11 +138,13 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
       setErrorBanner(formatError(error));
     } finally {
       setIsLoading(false);
+      setLoadingMessage(null);
     }
   }
 
   async function runCompare() {
     setIsLoading(true);
+    setLoadingMessage(mode === 'single' ? 'Comparing PNG files...' : 'Scanning directories...');
     setErrorBanner(null);
 
     try {
@@ -167,6 +176,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
       setErrorBanner(formatError(error));
     } finally {
       setIsLoading(false);
+      setLoadingMessage(null);
     }
   }
 
@@ -181,6 +191,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     activeTab,
     activeNodePath,
     isLoading,
+    loadingMessage,
     errorBanner,
     setMode,
     setLeftInput,

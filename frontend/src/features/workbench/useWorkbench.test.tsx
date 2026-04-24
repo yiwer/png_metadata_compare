@@ -73,6 +73,16 @@ describe('useWorkbench', () => {
           message: null,
         },
         {
+          id: 'identical-1',
+          kind: 'identical',
+          label: 'same.png',
+          left_path: 'C:/left/same.png',
+          right_path: 'C:/right/same.png',
+          difference_count: 0,
+          match_strategy: 'file_name',
+          message: null,
+        },
+        {
           id: 'left-only-1',
           kind: 'left_only',
           label: 'only.png',
@@ -150,6 +160,15 @@ describe('useWorkbench', () => {
     expect(result.current.activeSingleSideInspection).toEqual(leftOnlyInspection);
     expect(result.current.activeTab).toBe('left_metadata');
     expect(result.current.activeNodePath).toBeNull();
+
+    await act(async () => {
+      await result.current.selectResultItem('identical-1');
+    });
+
+    expect(api.compareSingle).toHaveBeenLastCalledWith('C:/left/same.png', 'C:/right/same.png');
+    expect(result.current.activeInspection).toEqual(pairInspection);
+    expect(result.current.activeSingleSideInspection).toBeNull();
+    expect(result.current.activeTab).toBe('left_metadata');
 
     act(() => {
       result.current.setMode('single');
