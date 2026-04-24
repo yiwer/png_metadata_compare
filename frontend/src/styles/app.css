@@ -33,29 +33,61 @@ button:focus-visible {
 .topbar {
   background: var(--color-ink);
   color: #fff;
-  padding: 10px 20px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  align-items: stretch;
   flex-shrink: 0;
+  height: 46px;
+  -webkit-app-region: drag;
 }
 
 .topbar-left {
   display: flex;
   align-items: center;
   gap: 16px;
+  padding: 0 20px;
+  min-width: 180px;
+  cursor: default;
 }
 
 .topbar-center {
   flex: 1;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
 }
 
 .topbar-right {
   display: flex;
   align-items: center;
+  min-width: 180px;
+  justify-content: flex-end;
+  cursor: default;
 }
+
+/* Window controls */
+.win-controls {
+  display: flex;
+  margin-left: 8px;
+}
+
+.win-btn {
+  width: 36px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  color: #aaa;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, color 0.1s;
+  -webkit-app-region: no-drag;
+}
+
+.win-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.win-btn--close:hover { background: #c42b1c; color: #fff; }
 
 .brand {
   font-size: 13px;
@@ -75,6 +107,7 @@ button:focus-visible {
   cursor: pointer;
   padding: 0;
   text-decoration: none;
+  -webkit-app-region: no-drag;
 }
 
 .back-btn:hover { text-decoration: underline; }
@@ -92,23 +125,26 @@ button:focus-visible {
   letter-spacing: 0.5px;
 }
 
-/* Mode toggle in topbar */
+/* Mode toggle in topbar — centered, prominent */
 .mode-toggle { display: flex; }
 
 .mode-btn {
-  padding: 5px 14px;
-  border: 2px solid #fff;
+  padding: 10px 28px;
+  border: 2px solid rgba(255,255,255,0.35);
   background: transparent;
-  color: #fff;
+  color: rgba(255,255,255,0.6);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   text-transform: uppercase;
   cursor: pointer;
-  letter-spacing: 0.5px;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  letter-spacing: 1.5px;
+  font-weight: 600;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+  -webkit-app-region: no-drag;
 }
 
 .mode-btn:first-child { border-right-width: 0; }
+.mode-btn:hover { color: #fff; border-color: rgba(255,255,255,0.6); }
 
 .mode-btn--active {
   background: var(--color-accent-yellow);
@@ -120,9 +156,9 @@ button:focus-visible {
 .toolbar {
   background: var(--color-surface);
   border-bottom: var(--border-strong);
-  padding: 10px 20px;
+  padding: 14px 20px;
   display: flex;
-  gap: 8px;
+  gap: 12px;
   align-items: flex-end;
   flex-shrink: 0;
 }
@@ -131,8 +167,17 @@ button:focus-visible {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
   min-width: 0;
+  padding: 10px 12px;
+  border: 2px dashed #ccc;
+  background: #fff;
+  transition: border-color var(--transition-fast);
+}
+
+.path-group:focus-within {
+  border-color: var(--color-ink);
+  border-style: solid;
 }
 
 .path-label {
@@ -140,6 +185,7 @@ button:focus-visible {
   text-transform: uppercase;
   letter-spacing: 1px;
   color: var(--color-muted);
+  font-weight: 600;
 }
 
 .path-input-row {
@@ -148,33 +194,37 @@ button:focus-visible {
 
 .path-input {
   flex: 1;
-  border: var(--border-strong);
-  border-right-width: 0;
-  padding: 7px 10px;
-  background: #fff;
+  border: none;
+  border-bottom: var(--border-strong);
+  padding: 4px 0;
+  background: transparent;
   min-width: 0;
-  font-size: 11px;
-  transition: box-shadow 0.15s;
+  font-size: 12px;
+  transition: border-color 0.15s;
 }
 
 .path-input:focus {
   outline: none;
-  box-shadow: var(--shadow-input-focus);
+  border-bottom-color: var(--color-accent-blue);
 }
 
 .choose-btn {
   border: var(--border-strong);
-  padding: 7px 12px;
+  padding: 4px 12px;
+  margin-top: 4px;
   font-size: 10px;
   text-transform: uppercase;
-  background: var(--color-bg);
+  background: var(--color-ink);
+  color: #fff;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
+  font-weight: 600;
+  transition: background var(--transition-fast);
 }
 
-.choose-btn:hover { background: var(--color-surface); }
+.choose-btn:hover { background: #555; }
 
 .vs-divider {
   font-size: 11px;
@@ -184,7 +234,7 @@ button:focus-visible {
 }
 
 /* CTA double-layer button */
-.cta-wrap { display: flex; align-items: flex-end; }
+.cta-wrap { display: flex; align-items: center; flex-shrink: 0; }
 
 .cta-outer {
   background: var(--color-ink);

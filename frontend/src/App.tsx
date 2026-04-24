@@ -1,8 +1,11 @@
 // frontend/src/App.tsx
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { DirectoryOverview } from './components/DirectoryOverview';
 import { PairComparison } from './components/PairComparison';
 import { useWorkbench } from './features/workbench/useWorkbench';
+
+const win = getCurrentWindow();
 
 async function pickPath(directory: boolean): Promise<string> {
   const selected = await open({
@@ -32,9 +35,12 @@ export default function App() {
       ? `${wb.directoryContext.index} / ${wb.directoryContext.totalDifferent} different`
       : null;
 
+  const showModeToggle = wb.view === 'directory-overview' || wb.directoryContext === null;
+
   return (
     <div className="app-shell">
       <header className="topbar">
+        {/* Left: brand + back */}
         <div className="topbar-left">
           {wb.view === 'pair-comparison' && wb.directoryContext && (
             <button type="button" className="back-btn" onClick={wb.goBackToDirectory}>
@@ -44,14 +50,9 @@ export default function App() {
           <span className="brand">PNG ⌁ Compare</span>
         </div>
 
+        {/* Center: mode toggle or filename — drag on empty space */}
         <div className="topbar-center">
-          {wb.view === 'pair-comparison' && wb.pairResult && (
-            <span className="topbar-filename">{wb.pairResult.left.file_name}</span>
-          )}
-        </div>
-
-        <div className="topbar-right">
-          {wb.view === 'directory-overview' || wb.directoryContext === null ? (
+          {showModeToggle ? (
             <div className="mode-toggle" role="group" aria-label="Mode">
               <button
                 type="button"
@@ -68,9 +69,20 @@ export default function App() {
                 Directory
               </button>
             </div>
-          ) : (
-            progressLabel && <span className="topbar-progress">{progressLabel}</span>
-          )}
+          ) : wb.pairResult ? (
+            <span className="topbar-filename">{wb.pairResult.left.file_name}</span>
+          ) : progressLabel ? (
+            <span className="topbar-progress">{progressLabel}</span>
+          ) : null}
+        </div>
+
+        {/* Right: window controls */}
+        <div className="topbar-right">
+          <div className="win-controls">
+            <button type="button" className="win-btn" onClick={() => void win.minimize()} aria-label="Minimize">─</button>
+            <button type="button" className="win-btn" onClick={() => void win.toggleMaximize()} aria-label="Maximize">□</button>
+            <button type="button" className="win-btn win-btn--close" onClick={() => void win.close()} aria-label="Close">✕</button>
+          </div>
         </div>
       </header>
 
