@@ -138,11 +138,7 @@ fn parse_stop_plate_itxt(data: &[u8]) -> Result<Option<String>, CompareError> {
 
 fn chunk_crc(chunk_type: &[u8], chunk_data: &[u8]) -> u32 {
     let mut crc = 0xffff_ffffu32;
-    for byte in chunk_type
-        .iter()
-        .copied()
-        .chain(chunk_data.iter().copied())
-    {
+    for byte in chunk_type.iter().copied().chain(chunk_data.iter().copied()) {
         crc ^= u32::from(byte);
         for _ in 0..8 {
             let mask = if crc & 1 == 1 { 0xedb8_8320 } else { 0 };
@@ -247,8 +243,8 @@ mod tests {
         let mut png = png_with_chunks(vec![stop_plate_itxt(r#"{"plate":"ABC123"}"#)]);
         corrupt_crc(&mut png, 0);
 
-        let error = extract_stop_plate_metadata(&png)
-            .expect_err("bad CRC should make the PNG malformed");
+        let error =
+            extract_stop_plate_metadata(&png).expect_err("bad CRC should make the PNG malformed");
 
         assert!(matches!(error, CompareError::TruncatedChunk));
     }

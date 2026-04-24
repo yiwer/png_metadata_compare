@@ -204,8 +204,8 @@ fn first_directly_visible_path(node: &DiffNode, filters: &TreeFilters) -> Option
 #[cfg(test)]
 mod tests {
     use super::{
-        draw_tree_from_parts, reconcile_selected_path, reconcile_selected_path_for,
-        should_default_open, should_show, TreeFilters,
+        TreeFilters, draw_tree_from_parts, reconcile_selected_path, reconcile_selected_path_for,
+        should_default_open, should_show,
     };
     use crate::app::CompareResultView;
     use crate::diff::{DiffNode, DiffStatus};

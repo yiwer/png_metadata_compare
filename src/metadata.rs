@@ -19,7 +19,7 @@ pub fn load_metadata(raw: Result<String, CompareError>) -> MetadataLoadResult {
 
 #[cfg(test)]
 mod tests {
-    use super::{load_metadata, MetadataLoadResult};
+    use super::{MetadataLoadResult, load_metadata};
     use crate::error::CompareError;
     use serde_json::json;
 

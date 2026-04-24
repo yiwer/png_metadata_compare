@@ -1,0 +1,299 @@
+<h2>PNG Metadata Compare Desktop Layout</h2>
+<p class="subtitle">A desktop workbench in MotherDuck style. Compare the recommended split workbench against a denser stacked layout.</p>
+
+<style>
+  .md-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+  }
+  .md-shell {
+    background: #f4efea;
+    border: 3px solid #383838;
+    min-height: 640px;
+    display: grid;
+    grid-template-rows: auto 1fr;
+  }
+  .md-topbar {
+    background: #ffde00;
+    border-bottom: 3px solid #383838;
+    padding: 14px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+  }
+  .md-badge {
+    background: #383838;
+    color: #f8f8f7;
+    padding: 6px 10px;
+    border: 2px solid #383838;
+    font-size: 12px;
+  }
+  .md-body {
+    padding: 18px;
+    display: grid;
+    gap: 16px;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.3), rgba(255,255,255,0.3)),
+      repeating-linear-gradient(
+        90deg,
+        transparent 0,
+        transparent 23px,
+        rgba(56,56,56,0.04) 23px,
+        rgba(56,56,56,0.04) 24px
+      ),
+      #f4efea;
+  }
+  .md-toolbar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .md-pill,
+  .md-btn,
+  .md-input {
+    border: 2px solid #383838;
+    border-radius: 0;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 14px;
+    background: #fff;
+    color: #383838;
+    text-transform: uppercase;
+    font-size: 12px;
+  }
+  .md-btn.primary {
+    background: #6fc2ff;
+  }
+  .md-btn.dark {
+    background: #383838;
+    color: #fff;
+  }
+  .md-panel-grid {
+    display: grid;
+    gap: 16px;
+    min-height: 0;
+  }
+  .md-panel-grid.recommended {
+    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 190px;
+  }
+  .md-panel-grid.recommended .sidebar {
+    grid-row: 1 / span 2;
+  }
+  .md-panel-grid.stacked {
+    grid-template-columns: 1fr;
+    grid-template-rows: 180px 1fr 180px;
+  }
+  .md-panel {
+    border: 3px solid #383838;
+    background: #fff;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto 1fr;
+  }
+  .md-panel-header {
+    background: #6fc2ff;
+    border-bottom: 3px solid #383838;
+    padding: 10px 14px;
+    text-transform: uppercase;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .md-panel-header.dark {
+    background: #383838;
+    color: #fff;
+  }
+  .md-panel-body {
+    padding: 14px;
+    display: grid;
+    gap: 10px;
+    align-content: start;
+  }
+  .md-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    align-items: center;
+    border: 2px solid #383838;
+    padding: 10px 12px;
+    background: #faf9f5;
+  }
+  .md-row.active {
+    background: #ffde00;
+  }
+  .md-row.dim {
+    opacity: 0.72;
+  }
+  .md-tree {
+    display: grid;
+    gap: 8px;
+  }
+  .md-tree-item {
+    border-left: 3px solid #383838;
+    padding-left: 10px;
+  }
+  .md-tree-item strong {
+    display: block;
+    text-transform: uppercase;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .md-diff {
+    border: 2px solid #383838;
+    padding: 10px 12px;
+    background: #f8f8f7;
+  }
+  .md-diff.blue {
+    background: #ebf9ff;
+  }
+  .md-diff.red {
+    background: #ffebe9;
+  }
+  .md-footer-note {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 12px;
+  }
+  .md-footer-note span {
+    border: 2px solid #383838;
+    padding: 6px 10px;
+    background: #fff;
+    text-transform: uppercase;
+  }
+  @media (max-width: 1100px) {
+    .md-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="cards">
+  <div class="card" data-choice="workbench-split" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="md-shell">
+        <div class="md-topbar">
+          <span>Option A / Recommended / Split Workbench</span>
+          <span class="md-badge">Single + Directory</span>
+        </div>
+        <div class="md-body">
+          <div class="md-toolbar">
+            <div class="md-pill">Mode: Single File</div>
+            <div class="md-input">Left PNG</div>
+            <div class="md-input">Right PNG</div>
+            <div class="md-btn primary">Compare</div>
+            <div class="md-btn">Swap</div>
+            <div class="md-btn dark">Only Differences</div>
+          </div>
+          <div class="md-panel-grid recommended">
+            <div class="md-panel sidebar">
+              <div class="md-panel-header dark">Summary / Batch Results</div>
+              <div class="md-panel-body">
+                <div class="md-row active"><span>STOP_A.png</span><span>4 changes</span></div>
+                <div class="md-row"><span>STOP_B.png</span><span>identical</span></div>
+                <div class="md-row dim"><span>STOP_C.png</span><span>left only</span></div>
+                <div class="md-row dim"><span>STOP_D.png</span><span>read error</span></div>
+              </div>
+            </div>
+            <div class="md-panel">
+              <div class="md-panel-header">Diff Tree</div>
+              <div class="md-panel-body md-tree">
+                <div class="md-tree-item">
+                  <strong>StopPlateMetadata</strong>
+                  <div class="md-diff blue">Title changed</div>
+                </div>
+                <div class="md-tree-item">
+                  <strong>LegacyCode</strong>
+                  <div class="md-diff red">A1 → B2</div>
+                </div>
+                <div class="md-tree-item">
+                  <strong>RouteName</strong>
+                  <div class="md-diff blue">West Line → West Express</div>
+                </div>
+              </div>
+            </div>
+            <div class="md-panel">
+              <div class="md-panel-header">Detail Inspector</div>
+              <div class="md-panel-body">
+                <div class="md-diff blue">Path: StopPlateMetadata.RouteName</div>
+                <div class="md-diff">Left: "West Line"</div>
+                <div class="md-diff">Right: "West Express"</div>
+                <div class="md-footer-note">
+                  <span>Keyboard Friendly</span>
+                  <span>Fast Scan Result Switching</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Option A: Split Workbench</h3>
+      <p>Left summary, center diff tree, bottom detail. Best fit for desktop review and fast batch inspection.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="stacked-report" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="md-shell">
+        <div class="md-topbar">
+          <span>Option B / Stacked Report</span>
+          <span class="md-badge">More Linear</span>
+        </div>
+        <div class="md-body">
+          <div class="md-toolbar">
+            <div class="md-pill">Mode: Directory</div>
+            <div class="md-input">Left Folder</div>
+            <div class="md-input">Right Folder</div>
+            <div class="md-btn primary">Compare Directories</div>
+          </div>
+          <div class="md-panel-grid stacked">
+            <div class="md-panel">
+              <div class="md-panel-header dark">Summary</div>
+              <div class="md-panel-body">
+                <div class="md-footer-note">
+                  <span>12 identical</span>
+                  <span>3 different</span>
+                  <span>1 left only</span>
+                  <span>1 issue</span>
+                </div>
+              </div>
+            </div>
+            <div class="md-panel">
+              <div class="md-panel-header">Results + Diff Tree</div>
+              <div class="md-panel-body">
+                <div class="md-row active"><span>STOP_A.png</span><span>selected</span></div>
+                <div class="md-row"><span>STOP_B.png</span><span>selected</span></div>
+                <div class="md-tree-item">
+                  <strong>Title</strong>
+                  <div class="md-diff blue">Downtown → Downtown Hub</div>
+                </div>
+                <div class="md-tree-item">
+                  <strong>StopCode</strong>
+                  <div class="md-diff red">missing on right</div>
+                </div>
+              </div>
+            </div>
+            <div class="md-panel">
+              <div class="md-panel-header">Detail</div>
+              <div class="md-panel-body">
+                <div class="md-diff">Shows node payloads and error context</div>
+                <div class="md-diff">Better for narrow widths, slower on desktop</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Option B: Stacked Report</h3>
+      <p>More report-like and simpler, but it costs scanning speed because summary, tree, and detail compete vertically.</p>
+    </div>
+  </div>
+</div>

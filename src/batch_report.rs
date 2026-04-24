@@ -204,9 +204,7 @@ mod tests {
 
     #[test]
     fn keeps_identical_results_in_identical_bucket() {
-        let matched = vec![MatchedPairCompareResult::identical(
-            pair("same.png"),
-        )];
+        let matched = vec![MatchedPairCompareResult::identical(pair("same.png"))];
 
         let report = build_batch_results(matched, vec![], vec![], vec![]);
 
@@ -259,8 +257,12 @@ mod tests {
             reason: "permission denied".to_string(),
         }];
 
-        let report =
-            build_batch_results(vec![], left_only.clone(), right_only.clone(), issues.clone());
+        let report = build_batch_results(
+            vec![],
+            left_only.clone(),
+            right_only.clone(),
+            issues.clone(),
+        );
 
         assert_eq!(report.issues, issues);
         assert_eq!(report.left_only, left_only);

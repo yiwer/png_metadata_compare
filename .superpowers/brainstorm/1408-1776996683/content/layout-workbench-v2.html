@@ -1,0 +1,388 @@
+<h2>Refined Workbench With Image Preview + Raw Metadata</h2>
+<p class="subtitle">Recommended layout after your feedback: support direct image preview, metadata inspection, and diff review in one continuous desktop workspace.</p>
+
+<style>
+  .wb-shell {
+    background: #f4efea;
+    border: 3px solid #383838;
+    min-height: 700px;
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    overflow: hidden;
+  }
+  .wb-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    background: #ffde00;
+    border-bottom: 3px solid #383838;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+  }
+  .wb-toolbar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 14px 18px;
+    border-bottom: 3px solid #383838;
+    background: #faf9f5;
+  }
+  .wb-chip,
+  .wb-input,
+  .wb-btn {
+    min-height: 40px;
+    padding: 0 14px;
+    border: 2px solid #383838;
+    background: #fff;
+    display: inline-flex;
+    align-items: center;
+    text-transform: uppercase;
+    font-size: 12px;
+  }
+  .wb-btn.primary {
+    background: #6fc2ff;
+  }
+  .wb-btn.dark {
+    background: #383838;
+    color: #fff;
+  }
+  .wb-main {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    min-height: 0;
+  }
+  .wb-sidebar {
+    border-right: 3px solid #383838;
+    background: #f8f8f7;
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    min-height: 0;
+  }
+  .wb-section-title {
+    padding: 12px 14px;
+    background: #383838;
+    color: #fff;
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.05em;
+  }
+  .wb-stats {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 12px 14px;
+    border-bottom: 2px solid #383838;
+  }
+  .wb-stat {
+    border: 2px solid #383838;
+    background: #ffde00;
+    padding: 6px 10px;
+    text-transform: uppercase;
+    font-size: 11px;
+  }
+  .wb-list {
+    padding: 12px;
+    display: grid;
+    gap: 10px;
+    align-content: start;
+    overflow: hidden;
+  }
+  .wb-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    border: 2px solid #383838;
+    background: #fff;
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+  .wb-row.active {
+    background: #ffde00;
+  }
+  .wb-row.muted {
+    opacity: 0.7;
+  }
+  .wb-workspace {
+    display: grid;
+    grid-template-rows: 240px auto 1fr;
+    min-height: 0;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.24), rgba(255,255,255,0.24)),
+      repeating-linear-gradient(
+        90deg,
+        transparent 0,
+        transparent 23px,
+        rgba(56,56,56,0.04) 23px,
+        rgba(56,56,56,0.04) 24px
+      ),
+      #f4efea;
+  }
+  .wb-preview {
+    border-bottom: 3px solid #383838;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .wb-preview-card {
+    border: 3px solid #383838;
+    background: #fff;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+  }
+  .wb-preview-card .head {
+    padding: 10px 12px;
+    background: #6fc2ff;
+    border-bottom: 3px solid #383838;
+    text-transform: uppercase;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .wb-preview-card .canvas {
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+      linear-gradient(45deg, #f1f1f1 25%, transparent 25%, transparent 75%, #f1f1f1 75%),
+      linear-gradient(45deg, #f1f1f1 25%, transparent 25%, transparent 75%, #f1f1f1 75%);
+    background-size: 24px 24px;
+    background-position: 0 0, 12px 12px;
+  }
+  .wb-image {
+    width: 74%;
+    height: 118px;
+    border: 3px solid #383838;
+    background: linear-gradient(135deg, #fff 0%, #f8f8f7 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-transform: uppercase;
+    font-size: 12px;
+  }
+  .wb-preview-card .foot {
+    padding: 10px 12px;
+    border-top: 2px solid #383838;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+  }
+  .wb-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 3px solid #383838;
+    background: #faf9f5;
+  }
+  .wb-tab {
+    border: 2px solid #383838;
+    padding: 8px 12px;
+    background: #fff;
+    text-transform: uppercase;
+    font-size: 12px;
+  }
+  .wb-tab.active {
+    background: #383838;
+    color: #fff;
+  }
+  .wb-content {
+    padding: 16px;
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: 16px;
+    min-height: 0;
+  }
+  .wb-panel {
+    border: 3px solid #383838;
+    background: #fff;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    min-height: 0;
+  }
+  .wb-panel-head {
+    padding: 10px 12px;
+    border-bottom: 3px solid #383838;
+    background: #6fc2ff;
+    text-transform: uppercase;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .wb-panel-head.dark {
+    background: #383838;
+    color: #fff;
+  }
+  .wb-panel-body {
+    padding: 14px;
+    display: grid;
+    gap: 10px;
+    align-content: start;
+  }
+  .wb-node {
+    border-left: 3px solid #383838;
+    padding-left: 10px;
+  }
+  .wb-node strong {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 12px;
+    text-transform: uppercase;
+  }
+  .wb-token {
+    border: 2px solid #383838;
+    padding: 9px 11px;
+    background: #ebf9ff;
+    font-size: 12px;
+  }
+  .wb-token.alt {
+    background: #faf9f5;
+  }
+  .wb-json {
+    border: 2px solid #383838;
+    padding: 10px 12px;
+    background: #f8f8f7;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .wb-flow {
+    margin-top: 18px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .wb-flow span {
+    border: 2px solid #383838;
+    padding: 7px 10px;
+    background: #fff;
+    text-transform: uppercase;
+    font-size: 11px;
+  }
+  @media (max-width: 1200px) {
+    .wb-main {
+      grid-template-columns: 1fr;
+    }
+    .wb-sidebar {
+      border-right: 0;
+      border-bottom: 3px solid #383838;
+    }
+    .wb-content {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="cards">
+  <div class="card" data-choice="persistent-preview-tabs" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="wb-shell">
+        <div class="wb-topbar">
+          <span>Recommended Desktop Workbench</span>
+          <span>Compare + Preview + Inspect</span>
+        </div>
+        <div class="wb-toolbar">
+          <div class="wb-chip">Mode: Directory</div>
+          <div class="wb-input">Left Folder</div>
+          <div class="wb-input">Right Folder</div>
+          <div class="wb-btn primary">Compare</div>
+          <div class="wb-btn">Swap</div>
+          <div class="wb-btn dark">Only Differences</div>
+        </div>
+        <div class="wb-main">
+          <div class="wb-sidebar">
+            <div class="wb-section-title">Batch Results</div>
+            <div class="wb-stats">
+              <div class="wb-stat">3 different</div>
+              <div class="wb-stat">12 identical</div>
+              <div class="wb-stat">1 issue</div>
+            </div>
+            <div class="wb-list">
+              <div class="wb-row active"><span>STOP_A.png</span><span>4 changes</span></div>
+              <div class="wb-row"><span>STOP_B.png</span><span>identical</span></div>
+              <div class="wb-row muted"><span>STOP_C.png</span><span>left only</span></div>
+              <div class="wb-row muted"><span>STOP_D.png</span><span>error</span></div>
+            </div>
+          </div>
+          <div class="wb-workspace">
+            <div class="wb-preview">
+              <div class="wb-preview-card">
+                <div class="head">Left PNG</div>
+                <div class="canvas">
+                  <div class="wb-image">Image Preview</div>
+                </div>
+                <div class="foot"><span>1920×1080</span><span>Zoom / Open</span></div>
+              </div>
+              <div class="wb-preview-card">
+                <div class="head">Right PNG</div>
+                <div class="canvas">
+                  <div class="wb-image">Image Preview</div>
+                </div>
+                <div class="foot"><span>1920×1080</span><span>Zoom / Open</span></div>
+              </div>
+            </div>
+            <div class="wb-tabs">
+              <div class="wb-tab active">Diff</div>
+              <div class="wb-tab">Left Metadata</div>
+              <div class="wb-tab">Right Metadata</div>
+              <div class="wb-tab">Raw JSON</div>
+              <div class="wb-tab">Images</div>
+            </div>
+            <div class="wb-content">
+              <div class="wb-panel">
+                <div class="wb-panel-head">Diff Tree</div>
+                <div class="wb-panel-body">
+                  <div class="wb-node">
+                    <strong>Title</strong>
+                    <div class="wb-token">Downtown → Downtown Hub</div>
+                  </div>
+                  <div class="wb-node">
+                    <strong>LegacyCode</strong>
+                    <div class="wb-token alt">A1 → B2</div>
+                  </div>
+                  <div class="wb-node">
+                    <strong>RouteName</strong>
+                    <div class="wb-token">West Line → West Express</div>
+                  </div>
+                </div>
+              </div>
+              <div class="wb-panel">
+                <div class="wb-panel-head dark">Inspector</div>
+                <div class="wb-panel-body">
+                  <div class="wb-token">Selected Path: StopPlateMetadata.RouteName</div>
+                  <div class="wb-token alt">Left Value: "West Line"</div>
+                  <div class="wb-token alt">Right Value: "West Express"</div>
+                  <div class="wb-json">{
+  "RouteName": "West Line",
+  "Title": "Downtown",
+  "LegacyCode": "A1"
+}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Persistent Preview + Tabbed Inspector</h3>
+      <p>Images stay visible for constant visual confirmation. The lower workspace switches between diff, each side's metadata, raw JSON, and larger image-focused review.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Recommended Flow</h3>
+  <div class="wb-flow">
+    <span>Select Pair</span>
+    <span>See Both Images</span>
+    <span>Read Diff</span>
+    <span>Inspect Left/Right Metadata</span>
+    <span>Open Raw JSON</span>
+  </div>
+</div>
