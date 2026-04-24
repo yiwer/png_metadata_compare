@@ -143,11 +143,11 @@ export function DirectoryOverview({
 }
 
 const KIND_LABEL: Record<BatchListItemKind, string> = {
-  different: 'different',
-  identical: 'identical',
-  left_only: 'left-only',
-  right_only: 'right-only',
-  error: 'error',
+  different: '差异',
+  identical: '相同',
+  left_only: '仅左',
+  right_only: '仅右',
+  error: '错误',
 };
 
 function StatChip({ kind, count }: { kind: BatchListItemKind; count: number }) {
