@@ -1,9 +1,18 @@
 /* frontend/src/styles/tokens.css */
 :root {
-  /* Surface */
-  --bg-page:        #000000;
-  --bg-elevated:    #0a0a0a;
-  --bg-overlay:     #141414;
+  /* Surface — layered tones to differentiate regions */
+  --bg-page:        #050608;  /* main content (deepest) */
+  --bg-topbar:      #14181f;  /* title bar — slight blue-grey */
+  --bg-slotbar:     #0e1218;  /* drop zone strip */
+  --bg-controlbar:  #0a0d12;  /* segmented controls strip */
+  --bg-elevated:    #1a1f28;  /* cards / filled slots / overlays */
+  --bg-overlay:     #1f2530;  /* hover */
+  --bg-tint-warm:   rgba(255, 181, 71, 0.04);  /* group section faint backdrop */
+  --bg-tint-cool:   rgba(91, 141, 255, 0.04);
+
+  /* Subtle texture: top inner highlight + bottom shadow on bars */
+  --bar-edge-top:    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --bar-edge-bottom: 0 1px 0 rgba(0, 0, 0, 0.6);
 
   /* Text */
   --text-primary:   #ffffff;
@@ -12,9 +21,9 @@
   --text-disabled:  #3a3f4a;
 
   /* Borders */
-  --border-subtle:  #1a1a1a;
-  --border-default: #2a2a2a;
-  --border-emph:    #444a55;
+  --border-subtle:  #1f242c;
+  --border-default: #2c333d;
+  --border-emph:    #485466;
   --border-focus:   #5b8dff;
 
   /* Diff status */

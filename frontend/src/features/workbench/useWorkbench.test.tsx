@@ -191,6 +191,15 @@ describe('useWorkbench', () => {
     expect(result.current.slotBarCollapsed).toBe(true);
   });
 
+  it('slot bar stays expanded when only one side is filled (solo view)', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setLeftInput('/a.png'); });
+    await act(async () => { await result.current.runAuto(); });
+    expect(result.current.view).toBe('solo');
+    expect(result.current.slotBarCollapsed).toBe(false);
+  });
+
   it('navigateToPair: left_only item → solo left', async () => {
     const onlyLeft = {
       id: 'L', kind: 'left_only' as const, label: 'x.png',

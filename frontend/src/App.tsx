@@ -1,5 +1,6 @@
 // frontend/src/App.tsx
 import { useEffect } from 'react';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openPath } from '@tauri-apps/plugin-opener';
@@ -56,8 +57,8 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <div className="topbar-left" data-tauri-drag-region>
+      <header className="topbar" data-tauri-drag-region>
+        <div className="topbar-left">
           <img className="brand-icon" src="/app-icon.png" alt="" draggable={false} />
           <span className="brand">PNG ⌁ Compare</span>
 
@@ -89,7 +90,7 @@ export default function App() {
           )}
         </div>
 
-        <div className="topbar-center" data-tauri-drag-region>
+        <div className="topbar-center">
           {wb.view === 'mirror' && wb.pairResult && (
             <span>{wb.pairResult.left.file_name}</span>
           )}
@@ -101,7 +102,7 @@ export default function App() {
           )}
         </div>
 
-        <div className="topbar-right" data-tauri-drag-region>
+        <div className="topbar-right">
           <div className="win-controls">
             <button type="button" className="win-btn" onClick={() => void win.minimize()} aria-label="最小化">─</button>
             <button type="button" className="win-btn" onClick={() => void win.toggleMaximize()} aria-label="最大化">□</button>
@@ -255,12 +256,15 @@ function ImageSplit({ leftPath, rightPath, leftName, rightName }: { leftPath: st
 }
 
 function ImagePane({ path, name }: { path: string; name: string }) {
-  const url = `asset://localhost/${path.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/')}`;
+  const url = convertFileSrc(path);
   return (
-    <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <img src={url} alt={name} style={{ maxWidth: '100%', maxHeight: 'calc(100vh - 200px)', objectFit: 'contain' }}
-           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-      <button type="button" className="controlbar__btn" onClick={() => void openPath(path)}>打开原文件 ↗</button>
+    <div className="image-pane">
+      <img className="image-pane__img" src={url} alt={name}
+           onError={(e) => { (e.currentTarget as HTMLImageElement).dataset.broken = 'true'; }} />
+      <div className="image-pane__bar">
+        <span className="image-pane__name">{name}</span>
+        <button type="button" className="controlbar__btn" onClick={() => void openPath(path)}>打开原文件 ↗</button>
+      </div>
     </div>
   );
 }

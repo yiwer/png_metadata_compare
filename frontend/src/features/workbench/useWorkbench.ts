@@ -200,7 +200,8 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
           setDirectoryContext(null);
           setView('solo');
           setViewMode('tree');
-          setSlotBarCollapsed(true);
+          // Keep slot bar expanded — only collapse once both sides are filled.
+          setSlotBarCollapsed(false);
         } else {
           setView('welcome');
           setSlotBarCollapsed(false);
