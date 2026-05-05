@@ -42,6 +42,7 @@ export default function App() {
       <header className="topbar">
         {/* Left: brand + separator + mode toggle (when visible) + back */}
         <div className="topbar-left" data-tauri-drag-region>
+          <img className="brand-icon" src="/app-icon.png" alt="" draggable={false} />
           <span className="brand">PNG ⌁ Compare</span>
 
           {showModeToggle && (

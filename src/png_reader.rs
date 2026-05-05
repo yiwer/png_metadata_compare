@@ -2,7 +2,8 @@ use crate::error::CompareError;
 use std::path::Path;
 
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
-const STOP_PLATE_KEYWORD: &str = "StopPlateMetadata";
+const STOP_PLATE_KEYWORDS: &[&str] =
+    &["StopPlateMetadata", "metadata", "Metadata", "stopMetadata"];
 
 pub fn extract_stop_plate_metadata(bytes: &[u8]) -> Result<String, CompareError> {
     if bytes.len() < PNG_SIGNATURE.len() || &bytes[..PNG_SIGNATURE.len()] != PNG_SIGNATURE {
@@ -83,7 +84,7 @@ fn parse_stop_plate_itxt(data: &[u8]) -> Result<Option<String>, CompareError> {
         return Ok(None);
     };
 
-    if keyword != STOP_PLATE_KEYWORD {
+    if !STOP_PLATE_KEYWORDS.contains(&keyword) {
         return Ok(None);
     }
 
@@ -155,6 +156,33 @@ mod tests {
     #[test]
     fn extracts_stop_plate_metadata_text() {
         let png = png_with_chunks(vec![stop_plate_itxt(r#"{"plate":"ABC123"}"#)]);
+
+        let metadata = extract_stop_plate_metadata(&png).expect("metadata should be extracted");
+
+        assert_eq!(metadata, r#"{"plate":"ABC123"}"#);
+    }
+
+    #[test]
+    fn extracts_metadata_keyword_variant() {
+        let png = png_with_chunks(vec![keyword_itxt("metadata", r#"{"plate":"ABC123"}"#)]);
+
+        let metadata = extract_stop_plate_metadata(&png).expect("metadata should be extracted");
+
+        assert_eq!(metadata, r#"{"plate":"ABC123"}"#);
+    }
+
+    #[test]
+    fn extracts_capitalized_metadata_keyword_variant() {
+        let png = png_with_chunks(vec![keyword_itxt("Metadata", r#"{"plate":"ABC123"}"#)]);
+
+        let metadata = extract_stop_plate_metadata(&png).expect("metadata should be extracted");
+
+        assert_eq!(metadata, r#"{"plate":"ABC123"}"#);
+    }
+
+    #[test]
+    fn extracts_stop_metadata_keyword_variant() {
+        let png = png_with_chunks(vec![keyword_itxt("stopMetadata", r#"{"plate":"ABC123"}"#)]);
 
         let metadata = extract_stop_plate_metadata(&png).expect("metadata should be extracted");
 
@@ -268,8 +296,12 @@ mod tests {
     }
 
     fn stop_plate_itxt(json: &str) -> Vec<u8> {
+        keyword_itxt("StopPlateMetadata", json)
+    }
+
+    fn keyword_itxt(keyword: &str, json: &str) -> Vec<u8> {
         let mut data = Vec::new();
-        data.extend_from_slice(b"StopPlateMetadata");
+        data.extend_from_slice(keyword.as_bytes());
         data.push(0);
         data.push(0);
         data.push(0);
