@@ -4,7 +4,9 @@ import { describe, it, expect, vi } from 'vitest';
 import App from './App';
 
 vi.mock('@tauri-apps/api/window', () => ({
-  getCurrentWindow: vi.fn(() => ({ onCloseRequested: vi.fn() })),
+  getCurrentWindow: vi.fn(() => ({
+    minimize: vi.fn(), toggleMaximize: vi.fn(), close: vi.fn(), onCloseRequested: vi.fn(),
+  })),
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openPath: vi.fn() }));
@@ -19,7 +21,12 @@ vi.mock('./lib/api', () => ({
 describe('App', () => {
   it('renders brand name', () => {
     render(<App />);
-    expect(screen.getByText(/PNG.*Compare/i)).toBeTruthy();
+    expect(screen.getAllByText(/PNG.*Compare/i).length).toBeGreaterThan(0);
+  });
+
+  it('renders welcome screen on first load', () => {
+    render(<App />);
+    expect(screen.getByText(/PNG 文件/)).toBeTruthy();
   });
 
   it('renders mode toggle buttons', () => {
