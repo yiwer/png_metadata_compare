@@ -25,23 +25,30 @@ function makeApi(overrides: Partial<WorkbenchApi> = {}): WorkbenchApi {
   return {
     compareSingle: vi.fn().mockResolvedValue(mockInspection),
     scanDirectory: vi.fn().mockResolvedValue(mockSummary),
-    inspectSingle: vi.fn().mockResolvedValue({}),
+    inspectSingle: vi.fn().mockResolvedValue({
+      side: 'left',
+      file_path: '/x.png',
+      file_name: 'x.png',
+      raw_json: null,
+      metadata: null,
+      error: null,
+    }),
     ...overrides,
   };
 }
 
 describe('useWorkbench', () => {
-  it('starts in single mode, pair-comparison view', () => {
+  it('starts in single mode, welcome view', () => {
     const { result } = renderHook(() => useWorkbench(makeApi()));
     expect(result.current.mode).toBe('single');
-    expect(result.current.view).toBe('pair-comparison');
+    expect(result.current.view).toBe('welcome');
   });
 
   it('switching mode resets state', () => {
     const { result } = renderHook(() => useWorkbench(makeApi()));
     act(() => { result.current.setMode('directory'); });
     expect(result.current.mode).toBe('directory');
-    expect(result.current.view).toBe('directory-overview');
+    expect(result.current.view).toBe('welcome');
     expect(result.current.pairResult).toBeNull();
   });
 
@@ -52,7 +59,7 @@ describe('useWorkbench', () => {
     await act(async () => { await result.current.runCompare(); });
     expect(api.compareSingle).toHaveBeenCalledWith('/a.png', '/b.png');
     expect(result.current.pairResult).toBe(mockInspection);
-    expect(result.current.view).toBe('pair-comparison');
+    expect(result.current.view).toBe('mirror');
   });
 
   it('runCompare (directory) calls scanDirectory and sets view to directory-overview', async () => {
@@ -70,7 +77,9 @@ describe('useWorkbench', () => {
     const api = makeApi();
     const { result } = renderHook(() => useWorkbench(api));
     act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
     await act(async () => { await result.current.runCompare(); });
+    act(() => { result.current.setActiveFilter('all'); });
     expect(result.current.filteredItems).toHaveLength(3);
     act(() => { result.current.setActiveFilter('different'); });
     expect(result.current.filteredItems).toHaveLength(2);
@@ -82,18 +91,20 @@ describe('useWorkbench', () => {
     const api = makeApi();
     const { result } = renderHook(() => useWorkbench(api));
     act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
     await act(async () => { await result.current.runCompare(); });
     await act(async () => {
       await result.current.navigateToPair(mockSummary.items[1]); // second 'different' item
     });
     expect(result.current.directoryContext).toEqual({ index: 2, totalDifferent: 2 });
-    expect(result.current.view).toBe('pair-comparison');
+    expect(result.current.view).toBe('mirror');
   });
 
   it('goBackToDirectory resets view and pairResult', async () => {
     const api = makeApi();
     const { result } = renderHook(() => useWorkbench(api));
     act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
     await act(async () => { await result.current.runCompare(); });
     await act(async () => { await result.current.navigateToPair(mockSummary.items[0]); });
     act(() => { result.current.goBackToDirectory(); });
@@ -114,5 +125,89 @@ describe('useWorkbench', () => {
     expect(result.current.diffHighlight).toBe(true);
     act(() => { result.current.toggleDiffHighlight(); });
     expect(result.current.diffHighlight).toBe(false);
+  });
+
+  it('view starts as welcome when both inputs empty', () => {
+    const { result } = renderHook(() => useWorkbench(makeApi()));
+    expect(result.current.view).toBe('welcome');
+  });
+
+  it('runAuto: single mode + only left filled → solo (left)', async () => {
+    const sideInspection = {
+      side: 'left' as const, file_path: '/a.png', file_name: 'a.png',
+      raw_json: '{"k":1}', metadata: { k: 1 }, error: null,
+    };
+    const api = makeApi({ inspectSingle: vi.fn().mockResolvedValue(sideInspection) });
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setLeftInput('/a.png'); });
+    await act(async () => { await result.current.runAuto(); });
+    expect(api.inspectSingle).toHaveBeenCalledWith('/a.png', 'left');
+    expect(result.current.view).toBe('solo');
+    expect(result.current.soloSide).toBe('left');
+    expect(result.current.soloResult).toBe(sideInspection);
+  });
+
+  it('runAuto: single mode + both filled → mirror', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setLeftInput('/a.png'); result.current.setRightInput('/b.png'); });
+    await act(async () => { await result.current.runAuto(); });
+    expect(result.current.view).toBe('mirror');
+    expect(result.current.pairResult).toBe(mockInspection);
+  });
+
+  it('runAuto: directory mode + both filled → directory-overview', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/L'); result.current.setRightInput('/R'); });
+    await act(async () => { await result.current.runAuto(); });
+    expect(result.current.view).toBe('directory-overview');
+  });
+
+  it('tryDropPath: dropping .png while in directory mode auto-switches to single', () => {
+    const { result } = renderHook(() => useWorkbench(makeApi()));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.tryDropPath('left', '/some/file.png'); });
+    expect(result.current.mode).toBe('single');
+    expect(result.current.leftInput).toBe('/some/file.png');
+    expect(result.current.toast).toMatch(/已切换到单文件模式/);
+  });
+
+  it('tryDropPath: dropping non-png while in single mode auto-switches to directory', () => {
+    const { result } = renderHook(() => useWorkbench(makeApi()));
+    act(() => { result.current.tryDropPath('right', '/some/folder'); });
+    expect(result.current.mode).toBe('directory');
+    expect(result.current.rightInput).toBe('/some/folder');
+    expect(result.current.toast).toMatch(/已切换到目录模式/);
+  });
+
+  it('slot bar collapses after first successful analysis with both filled', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setLeftInput('/a.png'); result.current.setRightInput('/b.png'); });
+    expect(result.current.slotBarCollapsed).toBe(false);
+    await act(async () => { await result.current.runAuto(); });
+    expect(result.current.slotBarCollapsed).toBe(true);
+  });
+
+  it('navigateToPair: left_only item → solo left', async () => {
+    const onlyLeft = {
+      id: 'L', kind: 'left_only' as const, label: 'x.png',
+      left_path: '/L/x.png', right_path: null, difference_count: 0,
+      match_strategy: 'file_name' as const, message: null,
+    };
+    const sideInspection = {
+      side: 'left' as const, file_path: '/L/x.png', file_name: 'x.png',
+      raw_json: null, metadata: { Foo: 'bar' }, error: null,
+    };
+    const api = makeApi({ inspectSingle: vi.fn().mockResolvedValue(sideInspection) });
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    await act(async () => { await result.current.runCompare(); });
+    await act(async () => { await result.current.navigateToPair(onlyLeft as any); });
+    expect(api.inspectSingle).toHaveBeenCalledWith('/L/x.png', 'left');
+    expect(result.current.view).toBe('solo');
+    expect(result.current.soloSide).toBe('left');
   });
 });
