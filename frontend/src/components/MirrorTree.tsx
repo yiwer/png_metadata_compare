@@ -56,25 +56,29 @@ export function MirrorTree({
   }, [onlyDiff, closed, rows]);
 
   return (
-    <div className="mirror-grid">
-      <PaneHeader label={leftLabel} side="left" />
-      <PaneHeader label={rightLabel} side="right" />
-      <Pane
-        rows={rows}
-        side="left"
-        closed={effectiveClosed}
-        toggle={toggle}
-        highlight={highlight}
-        onlyDiff={onlyDiff}
-      />
-      <Pane
-        rows={rows}
-        side="right"
-        closed={effectiveClosed}
-        toggle={toggle}
-        highlight={highlight}
-        onlyDiff={onlyDiff}
-      />
+    <div className="mirror-tree">
+      <div className="mirror-tree__headers">
+        <PaneHeader label={leftLabel} side="left" />
+        <PaneHeader label={rightLabel} side="right" />
+      </div>
+      <div className="mirror-tree__body">
+        <Pane
+          rows={rows}
+          side="left"
+          closed={effectiveClosed}
+          toggle={toggle}
+          highlight={highlight}
+          onlyDiff={onlyDiff}
+        />
+        <Pane
+          rows={rows}
+          side="right"
+          closed={effectiveClosed}
+          toggle={toggle}
+          highlight={highlight}
+          onlyDiff={onlyDiff}
+        />
+      </div>
     </div>
   );
 }
