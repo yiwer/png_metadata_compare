@@ -210,4 +210,17 @@ describe('useWorkbench', () => {
     expect(result.current.view).toBe('solo');
     expect(result.current.soloSide).toBe('left');
   });
+
+  it('navigateToPair: surfaces error when paths are missing', async () => {
+    const broken = {
+      id: 'X', kind: 'different' as const, label: 'x.png',
+      left_path: null, right_path: null, difference_count: 5,
+      match_strategy: 'file_name' as const, message: null,
+    };
+    const { result } = renderHook(() => useWorkbench(makeApi()));
+    act(() => { result.current.setMode('directory'); });
+    await act(async () => { await result.current.runCompare(); });
+    await act(async () => { await result.current.navigateToPair(broken as any); });
+    expect(result.current.error).toMatch(/路径缺失/);
+  });
 });

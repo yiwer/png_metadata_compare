@@ -1,5 +1,5 @@
 // frontend/src/features/workbench/useWorkbench.ts
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { workbenchApi } from '../../lib/api';
 import type {
   BatchListItem,
@@ -57,6 +57,13 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
   const activeInputs = inputsByMode[mode];
 
   function setMode(nextMode: WorkbenchMode) {
@@ -93,6 +100,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
       setDirectorySummary(null);
       setDirectoryContext(null);
       setError(null);
+      setSlotBarCollapsed(false);
       // Set the dropped value into the new mode's slot, leaving the other slot empty.
       setInputsByMode(() => ({
         single: { left: '', right: '' },
@@ -106,8 +114,9 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   }
 
   function flashToast(msg: string) {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast(msg);
-    setTimeout(() => setToast(null), 2200);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2200);
   }
 
   function toggleDiffHighlight() { setDiffHighlight((v) => !v); }
@@ -139,22 +148,19 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
         setSoloSide('left');
         setView('solo');
         setViewMode('tree');
-        return;
-      }
-      if (item.kind === 'right_only' && item.right_path) {
+      } else if (item.kind === 'right_only' && item.right_path) {
         const result = await api.inspectSingle(item.right_path, 'right');
         setSoloResult(result);
         setSoloSide('right');
         setView('solo');
         setViewMode('tree');
-        return;
-      }
-      if (item.left_path && item.right_path) {
+      } else if (item.left_path && item.right_path) {
         const result = await api.compareSingle(item.left_path, item.right_path);
         setPairResult(result);
         setView('mirror');
         setViewMode('tree');
-        return;
+      } else {
+        setError('无法打开此项目：路径缺失');
       }
     } catch (err) {
       setError(formatError(err));
