@@ -1,5 +1,5 @@
 // frontend/src/components/MirrorTree.tsx
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { GroupHead } from './GroupHead';
 import { buildMirrorRows, hasDiffDeep } from '../lib/treeModel';
 import type { MirrorRow } from '../lib/treeModel';
@@ -32,8 +32,12 @@ export function MirrorTree({
   rightLabel: string;
 }) {
   const rows = useMemo(() => buildMirrorRows(left, right, diffRoot), [left, right, diffRoot]);
-  const initialClosed = useMemo(() => collectDefaultClosed(rows), [rows]);
-  const [closed, setClosed] = useState<Set<string>>(initialClosed);
+  const [closed, setClosed] = useState<Set<string>>(() => collectDefaultClosed(rows));
+
+  // Reset folding state whenever the underlying data changes
+  useEffect(() => {
+    setClosed(collectDefaultClosed(rows));
+  }, [rows]);
 
   const toggle = (path: string) =>
     setClosed((cur) => {

@@ -96,4 +96,28 @@ describe('MirrorTree', () => {
     // FrameSize is modified → still visible
     expect(screen.getByText('1050x1660')).toBeTruthy();
   });
+
+  it('resets folding state when input data changes', () => {
+    const { rerender } = render(
+      <MirrorTree
+        left={left as any} right={right as any} diffRoot={diff}
+        highlight onlyDiff={false} leftLabel="L" rightLabel="R"
+      />,
+    );
+
+    // Render with completely different data; previously-closed groups must reset.
+    const otherDiff = {
+      path: '', status: 'unchanged' as const, left_value: null, right_value: null, summary: '', children: [],
+    };
+    const otherLeft = { Lines: [{ LineName: 'X9' }] };
+    const otherRight = { Lines: [{ LineName: 'X9' }] };
+    rerender(
+      <MirrorTree
+        left={otherLeft as any} right={otherRight as any} diffRoot={otherDiff}
+        highlight onlyDiff={false} leftLabel="L" rightLabel="R"
+      />,
+    );
+    // Lines is an array (default-closed). Its array-item label should NOT be visible.
+    expect(screen.queryByText(/线路 1 · X9/)).toBeNull();
+  });
 });

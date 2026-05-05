@@ -1,5 +1,5 @@
 // frontend/src/components/SoloTree.tsx
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { GroupHead } from './GroupHead';
 import { buildTree } from '../lib/treeModel';
 import type { GroupNode, LeafNode, TreeNode } from '../lib/treeModel';
@@ -7,8 +7,12 @@ import type { JsonValue } from '../lib/types';
 
 export function SoloTree({ value }: { value: JsonValue }) {
   const tree = useMemo(() => buildTree(value), [value]);
-  const initialClosed = useMemo(() => collectDefaultClosed(tree), [tree]);
-  const [closed, setClosed] = useState<Set<string>>(initialClosed);
+  const [closed, setClosed] = useState<Set<string>>(() => collectDefaultClosed(tree));
+
+  // Reset folding state whenever the underlying data changes
+  useEffect(() => {
+    setClosed(collectDefaultClosed(tree));
+  }, [tree]);
 
   const toggle = (path: string) =>
     setClosed((cur) => {
