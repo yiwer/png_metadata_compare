@@ -81,8 +81,9 @@ export function MirrorTree({
 
 function PaneHeader({ label, side }: { label: string; side: 'left' | 'right' }) {
   return (
-    <div className={`mirror-pane mirror-pane--${side}`} style={{ borderBottom: '1px solid var(--border-subtle)', padding: '6px 12px', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-      {side === 'left' ? '左 · ' : '右 · '}{label}
+    <div className={`mirror-pane-header mirror-pane-header--${side}`} title={label}>
+      <span className="mirror-pane-header__side">{side === 'left' ? '左' : '右'}</span>
+      <span className="mirror-pane-header__name">{label}</span>
     </div>
   );
 }

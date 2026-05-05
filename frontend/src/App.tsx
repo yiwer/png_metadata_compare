@@ -1,5 +1,5 @@
 // frontend/src/App.tsx
-import { useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -9,6 +9,9 @@ import { SoloTree } from './components/SoloTree';
 import { MirrorTree } from './components/MirrorTree';
 import { DirectoryList } from './components/DirectoryList';
 import { useWorkbench } from './features/workbench/useWorkbench';
+import { buildMirrorRows } from './lib/treeModel';
+import type { MirrorRow } from './lib/treeModel';
+import type { DiffNode, DiffStatus, JsonValue } from './lib/types';
 
 const win = getCurrentWindow();
 
@@ -141,27 +144,38 @@ export default function App() {
           <div className="banner banner--error">该文件不含嵌入式元数据。</div>
         )}
 
-        {wb.view === 'mirror' && wb.pairResult && wb.viewMode === 'tree' && (
-          <MirrorTree
-            left={wb.pairResult.left.metadata}
-            right={wb.pairResult.right.metadata}
-            diffRoot={wb.pairResult.diff_root}
-            highlight={wb.diffHighlight}
-            onlyDiff={wb.onlyDiff}
-            leftLabel={wb.pairResult.left.file_name}
-            rightLabel={wb.pairResult.right.file_name}
-          />
-        )}
-        {wb.view === 'mirror' && wb.pairResult && wb.viewMode === 'json' && (
-          <RawJsonSplit left={wb.pairResult.left.raw_json} right={wb.pairResult.right.raw_json} />
-        )}
-        {wb.view === 'mirror' && wb.pairResult && wb.viewMode === 'image' && (
-          <ImageSplit
-            leftPath={wb.pairResult.left.file_path}
-            rightPath={wb.pairResult.right.file_path}
-            leftName={wb.pairResult.left.file_name}
-            rightName={wb.pairResult.right.file_name}
-          />
+        {wb.view === 'mirror' && wb.pairResult && (
+          <div className="mirror-view">
+            <div className="mirror-view__main">
+              {wb.viewMode === 'tree' && (
+                <MirrorTree
+                  left={wb.pairResult.left.metadata}
+                  right={wb.pairResult.right.metadata}
+                  diffRoot={wb.pairResult.diff_root}
+                  highlight={wb.diffHighlight}
+                  onlyDiff={wb.onlyDiff}
+                  leftLabel={wb.pairResult.left.file_name}
+                  rightLabel={wb.pairResult.right.file_name}
+                />
+              )}
+              {wb.viewMode === 'json' && (
+                <RawJsonSplit left={wb.pairResult.left.raw_json} right={wb.pairResult.right.raw_json} />
+              )}
+              {wb.viewMode === 'image' && (
+                <ImageSplit
+                  leftPath={wb.pairResult.left.file_path}
+                  rightPath={wb.pairResult.right.file_path}
+                  leftName={wb.pairResult.left.file_name}
+                  rightName={wb.pairResult.right.file_name}
+                />
+              )}
+            </div>
+            <DiffReport
+              left={wb.pairResult.left.metadata}
+              right={wb.pairResult.right.metadata}
+              diffRoot={wb.pairResult.diff_root}
+            />
+          </div>
         )}
 
         {wb.view === 'directory-overview' && wb.directorySummary && (
@@ -247,24 +261,199 @@ function format(raw: string | null): string {
 }
 
 function ImageSplit({ leftPath, rightPath, leftName, rightName }: { leftPath: string; rightPath: string; leftName: string; rightName: string; }) {
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
+
+  const onWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    setZoom((z) => Math.min(20, Math.max(0.1, z * factor)));
+  };
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    dragRef.current = { startX: e.clientX, startY: e.clientY, baseX: offset.x, baseY: offset.y };
+  };
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!dragRef.current) return;
+    setOffset({
+      x: dragRef.current.baseX + (e.clientX - dragRef.current.startX),
+      y: dragRef.current.baseY + (e.clientY - dragRef.current.startY),
+    });
+  };
+  const endDrag = () => { dragRef.current = null; };
+  const reset = () => { setZoom(1); setOffset({ x: 0, y: 0 }); };
+
+  const transform = `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`;
+  const dragging = dragRef.current !== null;
+
   return (
-    <div className="mirror-grid">
-      <ImagePane path={leftPath} name={leftName} />
-      <ImagePane path={rightPath} name={rightName} />
+    <div className="image-split">
+      <div className="image-split__toolbar">
+        <button type="button" className="controlbar__btn" onClick={() => setZoom((z) => Math.max(0.1, z / 1.25))}>−</button>
+        <span className="controlbar__summary" style={{ minWidth: 56, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+        <button type="button" className="controlbar__btn" onClick={() => setZoom((z) => Math.min(20, z * 1.25))}>＋</button>
+        <button type="button" className="controlbar__btn" onClick={reset}>重置</button>
+        <span className="controlbar__spacer" />
+        <span className="controlbar__summary">滚轮缩放 · 拖拽平移（左右同步）</span>
+      </div>
+      <div
+        className={`image-split__panes${dragging ? ' image-split__panes--dragging' : ''}`}
+        onWheel={onWheel}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={endDrag}
+        onMouseLeave={endDrag}
+      >
+        <ImagePane path={leftPath} name={leftName} transform={transform} />
+        <ImagePane path={rightPath} name={rightName} transform={transform} />
+      </div>
     </div>
   );
 }
 
-function ImagePane({ path, name }: { path: string; name: string }) {
+function ImagePane({ path, name, transform }: { path: string; name: string; transform: string }) {
   const url = convertFileSrc(path);
   return (
     <div className="image-pane">
-      <img className="image-pane__img" src={url} alt={name}
-           onError={(e) => { (e.currentTarget as HTMLImageElement).dataset.broken = 'true'; }} />
+      <div className="image-pane__viewport">
+        <img
+          className="image-pane__img"
+          src={url}
+          alt={name}
+          draggable={false}
+          style={{ transform, transformOrigin: 'center center' }}
+          onError={(e) => { (e.currentTarget as HTMLImageElement).dataset.broken = 'true'; }}
+        />
+      </div>
       <div className="image-pane__bar">
         <span className="image-pane__name">{name}</span>
         <button type="button" className="controlbar__btn" onClick={() => void openPath(path)}>打开原文件 ↗</button>
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Diff report (bottom strip on mirror view)
+// ============================================================
+
+interface ReportItem {
+  path: string;
+  label: string;     // breadcrumb
+  status: DiffStatus;
+  leftValue: string | null;
+  rightValue: string | null;
+}
+
+function collectReportItems(rows: MirrorRow[]): ReportItem[] {
+  const out: ReportItem[] = [];
+  function walk(rs: MirrorRow[], crumbs: string[]) {
+    for (const r of rs) {
+      if (r.kind === 'leaf') {
+        if (r.status !== 'unchanged') {
+          out.push({
+            path: r.path,
+            label: [...crumbs, r.label].filter(Boolean).join(' › '),
+            status: r.status,
+            leftValue: r.leftValue,
+            rightValue: r.rightValue,
+          });
+        }
+      } else if (r.children) {
+        const next = r.label ? [...crumbs, r.label] : crumbs;
+        walk(r.children, next);
+      }
+    }
+  }
+  walk(rows, []);
+  return out;
+}
+
+const STATUS_LABEL: Record<DiffStatus, string> = {
+  unchanged: '未变',
+  modified: '改',
+  added: '仅右',
+  removed: '仅左',
+  reordered: '顺序',
+  error: '错',
+};
+
+const STATUS_TO_BADGE: Record<DiffStatus, string> = {
+  unchanged: 'badge--neu',
+  modified: 'badge--mod',
+  added: 'badge--add',
+  removed: 'badge--rem',
+  reordered: 'badge--neu',
+  error: 'badge--err',
+};
+
+function DiffReport({
+  left, right, diffRoot,
+}: {
+  left: JsonValue | null;
+  right: JsonValue | null;
+  diffRoot: DiffNode | null;
+}) {
+  const rows = useMemo(() => buildMirrorRows(left, right, diffRoot), [left, right, diffRoot]);
+  const items = useMemo(() => collectReportItems(rows), [rows]);
+  const [collapsed, setCollapsed] = useState(false);
+
+  const counts = useMemo(() => {
+    const c: Record<DiffStatus, number> = {
+      unchanged: 0, modified: 0, added: 0, removed: 0, reordered: 0, error: 0,
+    };
+    for (const it of items) c[it.status]++;
+    return c;
+  }, [items]);
+
+  return (
+    <div className={`diff-report${collapsed ? ' diff-report--collapsed' : ''}`}>
+      <button
+        type="button"
+        className="diff-report__head"
+        onClick={() => setCollapsed((c) => !c)}
+        aria-expanded={!collapsed}
+      >
+        <span className="diff-report__title">
+          <span className="diff-report__caret">{collapsed ? '▶' : '▼'}</span>
+          差异汇总
+        </span>
+        <span className="diff-report__counts">
+          {items.length === 0 ? (
+            <span className="controlbar__summary">两份元数据完全一致</span>
+          ) : (
+            <>
+              {counts.modified > 0 && <span className="badge badge--mod">{counts.modified} 改</span>}
+              {counts.removed > 0 && <span className="badge badge--rem">{counts.removed} 仅左</span>}
+              {counts.added > 0 && <span className="badge badge--add">{counts.added} 仅右</span>}
+              {counts.reordered > 0 && <span className="badge badge--neu">{counts.reordered} 顺序</span>}
+              <span className="diff-report__total">共 {items.length} 项</span>
+            </>
+          )}
+        </span>
+      </button>
+      {!collapsed && items.length > 0 && (
+        <div className="diff-report__body">
+          {items.map((it) => (
+            <div key={it.path} className={`diff-report__row diff-report__row--${it.status}`}>
+              <span className={`badge ${STATUS_TO_BADGE[it.status]}`}>{STATUS_LABEL[it.status]}</span>
+              <span className="diff-report__path">{it.label}</span>
+              <span className="diff-report__values">
+                {it.status === 'modified' && (
+                  <>
+                    <span className="diff-report__old">{it.leftValue}</span>
+                    <span className="diff-report__arrow">→</span>
+                    <span className="diff-report__new">{it.rightValue}</span>
+                  </>
+                )}
+                {it.status === 'removed' && <span className="diff-report__old">{it.leftValue}</span>}
+                {it.status === 'added' && <span className="diff-report__new">{it.rightValue}</span>}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
