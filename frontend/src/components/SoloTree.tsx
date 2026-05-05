@@ -57,7 +57,10 @@ function NodeView({
 function LeafView({ leaf }: { leaf: LeafNode }) {
   return (
     <div className="kv">
-      <span className="kv__key">{leaf.label}</span>
+      <span className="kv__key">
+        {leaf.label}
+        {leaf.isUnknown && <span className="badge badge--neu" style={{ marginLeft: 6, fontSize: 10 }}>未识别</span>}
+      </span>
       <span className="kv__val">{leaf.value}</span>
     </div>
   );

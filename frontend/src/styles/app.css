@@ -122,6 +122,8 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 .kv--placeholder .kv__key { font-style: italic; }
 .kv--placeholder .kv__val { color: var(--text-tertiary); }
 .kv--reord { border-left: 4px solid var(--reord-bord); padding-left: 6px; }
+.kv--err   { background: var(--err-bg); }
+.kv--err .kv__val { color: var(--err-text); }
 
 /* nested indentation */
 .tree__nested { border-left: 1px solid var(--border-subtle); padding-left: var(--sp-4); margin-left: var(--sp-2); }

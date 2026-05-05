@@ -50,7 +50,7 @@ export function Slot({
   if (!filled) {
     return (
       <div className={cls} data-side={side} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
-        <span className="slot__icon">{mode === 'single' ? '📄' : '📁'}</span>
+        <span className="slot__icon">{mode === 'single' ? '⬚' : '▢'}</span>
         <span>{mode === 'single' ? '拖入 PNG 或' : '拖入目录或'}</span>
         <button type="button" className="slot__pick" onClick={onPick}>浏览</button>
         {error && <span className="banner banner--error">{errorMessage}</span>}
@@ -60,7 +60,7 @@ export function Slot({
 
   return (
     <div className={cls} data-side={side} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
-      <span className="slot__icon">{mode === 'single' ? '📄' : '📁'}</span>
+      <span className="slot__icon">{mode === 'single' ? '⬚' : '▢'}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="slot__name">{basename(value)}</div>
         <div className="slot__sub">{value}</div>

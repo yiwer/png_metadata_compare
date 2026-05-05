@@ -51,8 +51,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wb.leftInput, wb.rightInput, wb.mode]);
 
-  const showModeToggle = wb.view === 'welcome' || wb.view === 'directory-overview' || wb.directoryContext === null;
-  const showSlotBar = wb.view !== 'mirror' || !wb.directoryContext;
+  const showModeToggle = wb.view === 'welcome' || wb.view === 'directory-overview' || !wb.inDirectorySubview;
+  const showSlotBar = wb.view !== 'mirror' || !wb.inDirectorySubview;
 
   return (
     <div className="app-shell">
@@ -79,7 +79,7 @@ export default function App() {
             </>
           )}
 
-          {wb.directoryContext && wb.view !== 'directory-overview' && (
+          {wb.inDirectorySubview && wb.view !== 'directory-overview' && (
             <>
               <div className="topbar-vsep" />
               <button type="button" className="back-btn" onClick={wb.goBackToDirectory}>
@@ -199,11 +199,13 @@ function ControlBar({ wb }: { wb: ReturnType<typeof useWorkbench> }) {
   const total = wb.pairResult ? wb.pairResult.diff_summary : null;
   return (
     <div className="controlbar">
-      <div className="controlbar__seg" role="group" aria-label="视图模式">
-        <button data-active={wb.viewMode === 'tree'} onClick={() => wb.setViewMode('tree')}>树</button>
-        <button data-active={wb.viewMode === 'json'} onClick={() => wb.setViewMode('json')}>JSON</button>
-        <button data-active={wb.viewMode === 'image'} onClick={() => wb.setViewMode('image')}>图片</button>
-      </div>
+      {wb.view === 'mirror' && (
+        <div className="controlbar__seg" role="group" aria-label="视图模式">
+          <button data-active={wb.viewMode === 'tree'} onClick={() => wb.setViewMode('tree')}>树</button>
+          <button data-active={wb.viewMode === 'json'} onClick={() => wb.setViewMode('json')}>JSON</button>
+          <button data-active={wb.viewMode === 'image'} onClick={() => wb.setViewMode('image')}>图片</button>
+        </div>
+      )}
       {wb.view === 'mirror' && (
         <>
           <button className="controlbar__btn" data-active={wb.diffHighlight} onClick={wb.toggleDiffHighlight}>高亮差异</button>
@@ -215,9 +217,6 @@ function ControlBar({ wb }: { wb: ReturnType<typeof useWorkbench> }) {
             </span>
           )}
         </>
-      )}
-      {wb.view === 'solo' && (
-        <span className="controlbar__summary">仅查看 {wb.soloSide === 'left' ? '左' : '右'} · {wb.soloResult?.file_name}</span>
       )}
     </div>
   );

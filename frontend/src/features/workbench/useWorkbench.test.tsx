@@ -211,6 +211,26 @@ describe('useWorkbench', () => {
     expect(result.current.soloSide).toBe('left');
   });
 
+  it('navigateToPair: left_only sets inDirectorySubview true; goBack clears it', async () => {
+    const onlyLeft = {
+      id: 'L', kind: 'left_only' as const, label: 'x.png',
+      left_path: '/L/x.png', right_path: null, difference_count: 0,
+      match_strategy: 'file_name' as const, message: null,
+    };
+    const sideInspection = {
+      side: 'left' as const, file_path: '/L/x.png', file_name: 'x.png',
+      raw_json: null, metadata: { Foo: 'bar' }, error: null,
+    };
+    const api = makeApi({ inspectSingle: vi.fn().mockResolvedValue(sideInspection) });
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    await act(async () => { await result.current.runCompare(); });
+    await act(async () => { await result.current.navigateToPair(onlyLeft as any); });
+    expect(result.current.inDirectorySubview).toBe(true);
+    act(() => { result.current.goBackToDirectory(); });
+    expect(result.current.inDirectorySubview).toBe(false);
+  });
+
   it('navigateToPair: surfaces error when paths are missing', async () => {
     const broken = {
       id: 'X', kind: 'different' as const, label: 'x.png',

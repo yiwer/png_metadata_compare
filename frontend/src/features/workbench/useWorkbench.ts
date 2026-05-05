@@ -47,6 +47,8 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   const [soloSide, setSoloSide] = useState<Side | null>(null);
   const [directoryContext, setDirectoryContext] = useState<DirectoryContext | null>(null);
 
+  const [inDirectorySubview, setInDirectorySubview] = useState<boolean>(false);
+
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [diffHighlight, setDiffHighlight] = useState(true);
   const [onlyDiff, setOnlyDiff] = useState(false);
@@ -77,6 +79,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     setActiveFilter('different');
     setError(null);
     setSlotBarCollapsed(false);
+    setInDirectorySubview(false);
   }
 
   function setLeftInput(value: string) {
@@ -129,6 +132,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     setSoloResult(null);
     setSoloSide(null);
     setDirectoryContext(null);
+    setInDirectorySubview(false);
   }
 
   async function navigateToPair(item: BatchListItem) {
@@ -142,6 +146,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     );
 
     try {
+      setInDirectorySubview(true);
       if (item.kind === 'left_only' && item.left_path) {
         const result = await api.inspectSingle(item.left_path, 'left');
         setSoloResult(result);
@@ -246,7 +251,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
         e.preventDefault();
         void runAuto();
       } else if (e.key === 'Escape') {
-        if (view === 'mirror' && directoryContext) {
+        if ((view === 'mirror' || view === 'solo') && inDirectorySubview) {
           goBackToDirectory();
         } else {
           setLeftInput(''); setRightInput('');
@@ -279,6 +284,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     soloResult,
     soloSide,
     directoryContext,
+    inDirectorySubview,
     viewMode,
     diffHighlight,
     onlyDiff,

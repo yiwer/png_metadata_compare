@@ -219,7 +219,10 @@ function MirrorLeaf({ row, side, highlight }: { row: MirrorRow; side: 'left' | '
   const cls = highlight ? STATUS_CLASS[row.status] : '';
   return (
     <div className={`kv ${cls}`.trim()}>
-      <span className="kv__key">{row.label}</span>
+      <span className="kv__key">
+        {row.label}
+        {row.isUnknown && <span className="badge badge--neu" style={{ marginLeft: 6, fontSize: 10 }}>未识别</span>}
+      </span>
       <span className="kv__val">{value}</span>
     </div>
   );
