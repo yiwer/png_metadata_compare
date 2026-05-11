@@ -1,0 +1,18 @@
+{
+  "$comment": "Optional comparator config. Rename to compare-config.json next to the binary (or in ./config/) to activate. Falls back to bundled defaults if absent.",
+
+  "ignored_fields": [
+    "Lines[*].RouteStops[*].Sequence",
+    "RenderTime",
+    "QRCode",
+    "StopId",
+    "Lines[*].LinePattern"
+  ],
+
+  "equivalence_maps": {
+    "Lines[*].RouteStops[*].BuildingType": {
+      "Metro": "地铁站",
+      "Hospital": "医院"
+    }
+  }
+}

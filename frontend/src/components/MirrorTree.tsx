@@ -144,6 +144,12 @@ function RowView({
 }) {
   if (onlyDiff && !hasDiffDeep(row)) return null;
 
+  // 列表项 (array-item) 只在拥有该数据的一侧渲染——对方那一侧根本不出这一行。
+  if (row.variant === 'array-item') {
+    if (row.status === 'added' && side === 'left') return null;
+    if (row.status === 'removed' && side === 'right') return null;
+  }
+
   if (row.kind === 'leaf') {
     return <MirrorLeaf row={row} side={side} highlight={highlight} />;
   }
@@ -169,6 +175,11 @@ function RowView({
   }
 
   const isOpen = !closed.has(row.path);
+  // 仅一侧存在的列表项：本侧用 "extra" 色（绿）突出（不论原 status 是 added 还是 removed）。
+  const headerStatus =
+    row.variant === 'array-item' && (row.status === 'added' || row.status === 'removed')
+      ? 'added'
+      : row.status;
   return (
     <>
       <GroupHead
@@ -177,6 +188,8 @@ function RowView({
         level={level}
         open={isOpen}
         onToggle={() => toggle(row.path)}
+        status={headerStatus}
+        highlight={highlight}
       />
       {isOpen && (
         <div className="tree__nested">
@@ -200,27 +213,6 @@ function RowView({
 
 function MirrorLeaf({ row, side, highlight }: { row: MirrorRow; side: 'left' | 'right'; highlight: boolean }) {
   const value = side === 'left' ? row.leftValue : row.rightValue;
-  const otherValue = side === 'left' ? row.rightValue : row.leftValue;
-
-  // placeholder when this side absent but the other side exists
-  if (value === null && otherValue !== null) {
-    return (
-      <div className="kv kv--placeholder">
-        <span className="kv__key">— — —</span>
-        <span className="kv__val">仅另一侧存在</span>
-      </div>
-    );
-  }
-  if (value === null && otherValue === null) {
-    // both null — render as a normal em-dash row
-    return (
-      <div className="kv">
-        <span className="kv__key">{row.label}</span>
-        <span className="kv__val">—</span>
-      </div>
-    );
-  }
-
   const cls = highlight ? STATUS_CLASS[row.status] : '';
   return (
     <div className={`kv ${cls}`.trim()}>

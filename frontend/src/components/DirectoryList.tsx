@@ -47,19 +47,24 @@ export function DirectoryList({
     <div className="dirlist">
       <div className="dirlist__stats">
         <div className="dirlist__stat dirlist__stat--mod">
-          <span className="dirlist__stat-num">{c.different}</span>不一致
+          <span className="dirlist__stat-num">{c.different}</span>
+          <span className="dirlist__stat-label">不一致</span>
         </div>
         <div className="dirlist__stat dirlist__stat--rem">
-          <span className="dirlist__stat-num">{c.left_only}</span>仅左
+          <span className="dirlist__stat-num">{c.left_only}</span>
+          <span className="dirlist__stat-label">仅左</span>
         </div>
         <div className="dirlist__stat dirlist__stat--add">
-          <span className="dirlist__stat-num">{c.right_only}</span>仅右
+          <span className="dirlist__stat-num">{c.right_only}</span>
+          <span className="dirlist__stat-label">仅右</span>
         </div>
         <div className="dirlist__stat dirlist__stat--eq">
-          <span className="dirlist__stat-num">{c.identical}</span>一致
+          <span className="dirlist__stat-num">{c.identical}</span>
+          <span className="dirlist__stat-label">一致</span>
         </div>
         <div className="dirlist__stat dirlist__stat--total">
-          <span className="dirlist__stat-num">{total}</span>总计
+          <span className="dirlist__stat-num">{total}</span>
+          <span className="dirlist__stat-label">总计</span>
         </div>
       </div>
 

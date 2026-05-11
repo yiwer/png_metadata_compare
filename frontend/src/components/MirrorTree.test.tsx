@@ -62,7 +62,7 @@ describe('MirrorTree', () => {
     expect(container.querySelectorAll('.kv--mod').length).toBe(0);
   });
 
-  it('renders placeholder on the missing side for removed leaf', () => {
+  it('renders missing side as em dash with the same label as the present side', () => {
     const { container } = render(
       <MirrorTree
         left={left as any}
@@ -74,9 +74,13 @@ describe('MirrorTree', () => {
         rightLabel="R"
       />,
     );
-    // The right pane should have a placeholder for the "Hints" row.
-    const placeholders = container.querySelectorAll('.kv--placeholder');
-    expect(placeholders.length).toBeGreaterThan(0);
+    // No "仅另一侧存在" placeholder anymore — both sides render the row uniformly.
+    expect(container.querySelectorAll('.kv--placeholder').length).toBe(0);
+    // The Hints row exists on both panes; right side shows em-dash since the data is absent.
+    const dashes = Array.from(container.querySelectorAll('.kv__val')).filter(
+      (n) => n.textContent === '—',
+    );
+    expect(dashes.length).toBeGreaterThan(0);
   });
 
   it('hides unchanged rows when onlyDiff is true', () => {

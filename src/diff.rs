@@ -1,3 +1,4 @@
+use crate::config::config;
 use crate::error::CompareError;
 use crate::metadata::MetadataLoadResult;
 use serde::Serialize;
@@ -44,8 +45,7 @@ impl DiffSummary {
 type BusinessKeyFn = fn(&Value) -> Option<String>;
 
 struct KeyedArrayIndex<'a> {
-    items: BTreeMap<String, (usize, &'a Value)>,
-    blocked_keys: BTreeSet<String>,
+    items: BTreeMap<String, Vec<&'a Value>>,
     errors: Vec<DiffNode>,
 }
 
@@ -72,23 +72,43 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
             let mut keys = BTreeSet::new();
             keys.extend(left_map.keys().cloned());
             keys.extend(right_map.keys().cloned());
+            for known in schema_keys_for_path(path) {
+                keys.insert((*known).to_string());
+            }
+            keys.retain(|key| !is_ignored_field(&join_path(path, key)));
+
+            let null = Value::Null;
+            let empty_object = Value::Object(serde_json::Map::new());
+            let empty_array = Value::Array(Vec::new());
+            let placeholder_for = |peer: &Value| -> &Value {
+                match peer {
+                    Value::Array(_) => &empty_array,
+                    Value::Object(_) => &empty_object,
+                    _ => &null,
+                }
+            };
 
             let children = keys
                 .into_iter()
                 .map(|key| {
-                    compare_values(
-                        &join_path(path, &key),
-                        left_map.get(&key),
-                        right_map.get(&key),
-                    )
+                    let left_value = left_map.get(&key);
+                    let right_value = right_map.get(&key);
+                    let (left_filled, right_filled) = match (left_value, right_value) {
+                        (Some(_), Some(_)) => (left_value, right_value),
+                        (Some(lv), None) => (Some(lv), Some(placeholder_for(lv))),
+                        (None, Some(rv)) => (Some(placeholder_for(rv)), Some(rv)),
+                        (None, None) => (Some(&null), Some(&null)),
+                    };
+                    compare_values(&join_path(path, &key), left_filled, right_filled)
                 })
                 .collect();
 
-            aggregate_node(path, left.is_some(), right.is_some(), children)
+            aggregate_node(path, true, true, children)
         }
         (None, Some(Value::Object(right_map))) => {
             let children = right_map
                 .iter()
+                .filter(|(key, _)| !is_ignored_field(&join_path(path, key)))
                 .map(|(key, value)| compare_values(&join_path(path, key), None, Some(value)))
                 .collect();
 
@@ -97,6 +117,7 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
         (Some(Value::Object(left_map)), None) => {
             let children = left_map
                 .iter()
+                .filter(|(key, _)| !is_ignored_field(&join_path(path, key)))
                 .map(|(key, value)| compare_values(&join_path(path, key), Some(value), None))
                 .collect();
 
@@ -109,9 +130,13 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
         (Some(Value::Array(left_items)), None) => compare_array(path, Some(left_items), None),
         _ => {
             let status = match (left, right) {
-                (Some(left_value), Some(right_value)) if left_value == right_value => {
+                (Some(left_value), Some(right_value))
+                    if scalars_are_equivalent_at(path, left_value, right_value) =>
+                {
                     DiffStatus::Unchanged
                 }
+                (None, Some(rv)) if is_blank_scalar(rv) => DiffStatus::Unchanged,
+                (Some(lv), None) if is_blank_scalar(lv) => DiffStatus::Unchanged,
                 (None, Some(_)) => DiffStatus::Added,
                 (Some(_), None) => DiffStatus::Removed,
                 (Some(_), Some(_)) => DiffStatus::Modified,
@@ -165,36 +190,33 @@ fn compare_keyed_array(
     let mut children = Vec::new();
     children.extend(left_index.errors);
     children.extend(right_index.errors);
-    let mut blocked_keys = left_index.blocked_keys;
-    blocked_keys.extend(right_index.blocked_keys);
 
     let mut keys = BTreeSet::new();
     keys.extend(left_index.items.keys().cloned());
     keys.extend(right_index.items.keys().cloned());
 
+    let empty: Vec<&Value> = Vec::new();
     for key in keys {
-        if blocked_keys.contains(&key) {
-            continue;
+        let left_list = left_index.items.get(&key).unwrap_or(&empty);
+        let right_list = right_index.items.get(&key).unwrap_or(&empty);
+        let with_suffix = left_list.len().max(right_list.len()) > 1;
+        let matched = left_list.len().min(right_list.len());
+
+        for i in 0..matched {
+            let child_path = join_keyed_occurrence_path(path, &key, i, with_suffix);
+            children.push(compare_values(
+                &child_path,
+                Some(left_list[i]),
+                Some(right_list[i]),
+            ));
         }
-        let child_path = join_key_path(path, &key);
-        match (left_index.items.get(&key), right_index.items.get(&key)) {
-            (Some((left_pos, left_value)), Some((right_pos, right_value))) => {
-                children.push(compare_values(
-                    &child_path,
-                    Some(left_value),
-                    Some(right_value),
-                ));
-                if left_pos != right_pos {
-                    children.push(reorder_node(&child_path, *left_pos, *right_pos));
-                }
-            }
-            (Some((_, left_value)), None) => {
-                children.push(compare_values(&child_path, Some(left_value), None))
-            }
-            (None, Some((_, right_value))) => {
-                children.push(compare_values(&child_path, None, Some(right_value)))
-            }
-            (None, None) => {}
+        for i in matched..left_list.len() {
+            let child_path = join_keyed_occurrence_path(path, &key, i, with_suffix);
+            children.push(compare_values(&child_path, Some(left_list[i]), None));
+        }
+        for i in matched..right_list.len() {
+            let child_path = join_keyed_occurrence_path(path, &key, i, with_suffix);
+            children.push(compare_values(&child_path, None, Some(right_list[i])));
         }
     }
 
@@ -207,9 +229,8 @@ fn build_key_index<'a>(
     key_fn: BusinessKeyFn,
     side: &str,
 ) -> KeyedArrayIndex<'a> {
-    let mut items = BTreeMap::new();
+    let mut items: BTreeMap<String, Vec<&'a Value>> = BTreeMap::new();
     let mut errors = Vec::new();
-    let mut blocked_keys = BTreeSet::new();
 
     for (position, value) in values.iter().enumerate() {
         let Some(key) = key_fn(value) else {
@@ -221,29 +242,10 @@ fn build_key_index<'a>(
             ));
             continue;
         };
-
-        if blocked_keys.contains(&key) {
-            continue;
-        }
-
-        if items.insert(key.clone(), (position, value)).is_some() {
-            items.remove(&key);
-            blocked_keys.insert(key.clone());
-            errors.push(compare_error_node(
-                &format!("{path}.__error__.{side}[{key}]"),
-                CompareError::AmbiguousBusinessKey {
-                    path: join_path("", path),
-                    key,
-                },
-            ));
-        }
+        items.entry(key).or_default().push(value);
     }
 
-    KeyedArrayIndex {
-        items,
-        blocked_keys,
-        errors,
-    }
+    KeyedArrayIndex { items, errors }
 }
 
 fn business_key_for_path(path: &str) -> Option<BusinessKeyFn> {
@@ -262,13 +264,10 @@ fn business_key_for_path(path: &str) -> Option<BusinessKeyFn> {
             }
         }),
         "RouteStops" => Some(|value| {
-            let sequence = value.get("Sequence").and_then(|sequence| sequence.as_i64());
-            let name = value.get("Name").and_then(|name| name.as_str());
-            match (sequence, name) {
-                (Some(sequence), Some(name)) => Some(format!("{sequence}|{name}")),
-                (_, Some(name)) => Some(name.to_owned()),
-                _ => None,
-            }
+            value
+                .get("Name")
+                .and_then(|name| name.as_str())
+                .map(str::to_owned)
         }),
         _ => None,
     }
@@ -276,6 +275,105 @@ fn business_key_for_path(path: &str) -> Option<BusinessKeyFn> {
 
 fn terminal_path_segment(path: &str) -> &str {
     path.rsplit('.').next().unwrap_or(path)
+}
+
+fn schema_keys_for_path(path: &str) -> &'static [&'static str] {
+    const ROOT: &[&str] = &[
+        "StopId",
+        "StopName",
+        "StopEngName",
+        "OriName",
+        "RoadName",
+        "DirectionOnRoad",
+        "DistrictName",
+        "StreetCommitteeName",
+        "QRCode",
+        "HasHints",
+        "Hints",
+        "IsGroupPrint",
+        "GroupItems",
+        "IsBack",
+        "FrameSize",
+        "Lines",
+        "RenderTime",
+    ];
+    const GROUP_ITEM: &[&str] = &["SequenceNo", "LineNames", "Distance", "IsCurrent"];
+    const LINE: &[&str] = &[
+        "LineName",
+        "Direction",
+        "FirstStopName",
+        "LastStopName",
+        "NextStop",
+        "CurrentStopSequence",
+        "IsStarting",
+        "IsEnding",
+        "HeadBusCorpName",
+        "TicketType",
+        "PriceDescription",
+        "ServiceTimeDescription",
+        "ScheduledServiceDescription",
+        "LinePattern",
+        "RouteStops",
+    ];
+    // Sequence 不参与 schema 补全也不参与比对——位置由排序展示承载，重复输出会变噪音。
+    const ROUTE_STOP_VISIBLE: &[&str] = &["Name", "BuildingType", "RoadName"];
+
+    match normalize_path_for_schema(path).as_str() {
+        "" => ROOT,
+        "GroupItems[*]" => GROUP_ITEM,
+        "Lines[*]" => LINE,
+        "Lines[*].RouteStops[*]" => ROUTE_STOP_VISIBLE,
+        _ => &[],
+    }
+}
+
+/// 强制忽略的字段——即使两侧都有值也不进入 diff。
+/// 来源：`compare-config.json` 的 `ignored_fields`，缺省含 `Lines[*].RouteStops[*].Sequence`
+/// （列表已按 Sequence 排序展示，再报 Sequence 改动是噪音）。
+fn is_ignored_field(path: &str) -> bool {
+    config().is_ignored(&normalize_path_for_schema(path))
+}
+
+fn is_blank_scalar(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::String(s) => s.is_empty(),
+        _ => false,
+    }
+}
+
+/// Equivalence with optional per-path canonicalisation from `compare-config.json`.
+/// String values matching an entry in the equivalence map are folded to their canonical
+/// form before comparison; other types fall back to literal equality + blank-scalar
+/// equivalence.
+fn scalars_are_equivalent_at(path: &str, left: &Value, right: &Value) -> bool {
+    if is_blank_scalar(left) && is_blank_scalar(right) {
+        return true;
+    }
+    if let (Value::String(ls), Value::String(rs)) = (left, right) {
+        let normalized = normalize_path_for_schema(path);
+        let cfg = config();
+        return cfg.canonicalize(&normalized, ls) == cfg.canonicalize(&normalized, rs);
+    }
+    left == right
+}
+
+fn normalize_path_for_schema(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    let mut chars = path.chars();
+    while let Some(c) = chars.next() {
+        if c == '[' {
+            out.push_str("[*]");
+            for cc in chars.by_ref() {
+                if cc == ']' {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn value_node(
@@ -314,17 +412,6 @@ fn error_node(path: &str, left: Option<&CompareError>, right: Option<&CompareErr
     }
 }
 
-fn compare_error_node(path: &str, error: CompareError) -> DiffNode {
-    DiffNode {
-        path: join_path("", path),
-        status: DiffStatus::Error,
-        left_value: None,
-        right_value: None,
-        summary: error.to_string(),
-        children: Vec::new(),
-    }
-}
-
 fn keyed_array_issue_node(path: &str, side: &str, position: usize, summary: String) -> DiffNode {
     DiffNode {
         path: format!("{path}.__error__.{side}[{position}]"),
@@ -332,17 +419,6 @@ fn keyed_array_issue_node(path: &str, side: &str, position: usize, summary: Stri
         left_value: None,
         right_value: None,
         summary,
-        children: Vec::new(),
-    }
-}
-
-fn reorder_node(path: &str, left_pos: usize, right_pos: usize) -> DiffNode {
-    DiffNode {
-        path: format!("{path}.__order__"),
-        status: DiffStatus::Reordered,
-        left_value: Some(left_pos.to_string()),
-        right_value: Some(right_pos.to_string()),
-        summary: format!("{path} reordered: {left_pos} -> {right_pos}"),
         children: Vec::new(),
     }
 }
@@ -411,6 +487,20 @@ fn join_key_path(parent: &str, key: &str) -> String {
     }
 }
 
+fn join_keyed_occurrence_path(
+    parent: &str,
+    key: &str,
+    occurrence_index: usize,
+    with_suffix: bool,
+) -> String {
+    if with_suffix {
+        let labeled = format!("{key}#{}", occurrence_index + 1);
+        join_key_path(parent, &labeled)
+    } else {
+        join_key_path(parent, key)
+    }
+}
+
 fn compact_json(value: Option<&Value>) -> Option<String> {
     value.and_then(|value| serde_json::to_string(value).ok())
 }
@@ -469,10 +559,69 @@ fn collect_changes(node: &DiffNode, changes: &mut Vec<DiffNode>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{DiffStatus, compare_metadata, flatten_changes};
+    use super::{DiffNode, DiffStatus, compare_metadata, flatten_changes, summarize_changes};
     use crate::error::CompareError;
     use crate::metadata::MetadataLoadResult;
     use serde_json::json;
+
+    #[test]
+    #[ignore]
+    fn dump_real_meta_diff() {
+        let left_text = std::fs::read_to_string("tmp/_meta1.json").expect("read tmp/_meta1.json");
+        let right_text = std::fs::read_to_string("tmp/_meta2.json").expect("read tmp/_meta2.json");
+        let strip_bom = |s: &str| s.trim_start_matches('\u{feff}').to_string();
+        let left = MetadataLoadResult::Parsed(serde_json::from_str(&strip_bom(&left_text)).unwrap());
+        let right = MetadataLoadResult::Parsed(serde_json::from_str(&strip_bom(&right_text)).unwrap());
+
+        let diff = compare_metadata(&left, &right);
+        let changes = flatten_changes(&diff);
+        let summary = summarize_changes(&changes);
+
+        println!("=== summary ===");
+        println!(
+            "modified={}  added={}  removed={}  reordered={}  error={}  total={}",
+            summary.modified,
+            summary.added,
+            summary.removed,
+            summary.reordered,
+            summary.error,
+            summary.total()
+        );
+
+        println!("\n=== flattened non-Unchanged nodes ===");
+        for c in &changes {
+            println!(
+                "[{:?}] {}\n   left  = {}\n   right = {}",
+                c.status,
+                c.path,
+                c.left_value.as_deref().unwrap_or("<absent>"),
+                c.right_value.as_deref().unwrap_or("<absent>")
+            );
+        }
+
+        println!("\n=== diff tree (only non-Unchanged subtrees) ===");
+        print_tree(&diff, 0);
+    }
+
+    fn print_tree(node: &DiffNode, depth: usize) {
+        if node.status == DiffStatus::Unchanged {
+            return;
+        }
+        let indent = "  ".repeat(depth);
+        let value_hint = match (&node.left_value, &node.right_value) {
+            (Some(l), Some(r)) => format!(" : {l} -> {r}"),
+            (Some(l), None) => format!(" : {l} -> <absent>"),
+            (None, Some(r)) => format!(" : <absent> -> {r}"),
+            (None, None) => String::new(),
+        };
+        println!(
+            "{indent}{:?}  {}{}",
+            node.status, node.path, value_hint
+        );
+        for child in &node.children {
+            print_tree(child, depth + 1);
+        }
+    }
 
     #[test]
     fn marks_scalar_change_as_modified() {
@@ -492,7 +641,7 @@ mod tests {
     }
 
     #[test]
-    fn marks_missing_field_as_added() {
+    fn marks_missing_object_field_as_modified_with_null_placeholder() {
         let left = MetadataLoadResult::Parsed(json!({}));
         let right = MetadataLoadResult::Parsed(json!({"newField": 7}));
 
@@ -503,13 +652,13 @@ mod tests {
             .find(|node| node.path == "newField")
             .unwrap_or_else(|| panic!("missing diff child for newField: {diff:#?}"));
 
-        assert_eq!(child.status, DiffStatus::Added);
-        assert_eq!(child.left_value, None);
+        assert_eq!(child.status, DiffStatus::Modified);
+        assert_eq!(child.left_value.as_deref(), Some("null"));
         assert_eq!(child.right_value.as_deref(), Some("7"));
     }
 
     #[test]
-    fn keeps_added_compound_values_explorable() {
+    fn keeps_added_array_items_explorable_when_array_field_was_absent_on_one_side() {
         let left = MetadataLoadResult::Parsed(json!({}));
         let right = MetadataLoadResult::Parsed(json!({
             "items": [
@@ -524,9 +673,7 @@ mod tests {
             .find(|node| node.path == "items")
             .unwrap_or_else(|| panic!("missing diff child for items: {diff:#?}"));
 
-        assert_eq!(items.status, DiffStatus::Added);
-        assert!(items.left_value.is_none());
-        assert!(items.right_value.is_none());
+        assert_eq!(items.status, DiffStatus::Modified);
 
         let index_node = items
             .children
@@ -548,7 +695,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_removed_compound_parent_status() {
+    fn keeps_removed_array_items_explorable_when_array_field_was_absent_on_one_side() {
         let left = MetadataLoadResult::Parsed(json!({
             "items": [
                 {"name": "alpha"}
@@ -563,7 +710,7 @@ mod tests {
             .find(|node| node.path == "items")
             .unwrap_or_else(|| panic!("missing diff child for items: {diff:#?}"));
 
-        assert_eq!(items.status, DiffStatus::Removed);
+        assert_eq!(items.status, DiffStatus::Modified);
 
         let index_node = items
             .children
@@ -575,7 +722,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_empty_added_and_removed_compound_parent_statuses() {
+    fn treats_absent_object_field_as_equal_to_empty_container_on_other_side() {
         let added = compare_metadata(
             &MetadataLoadResult::Parsed(json!({})),
             &MetadataLoadResult::Parsed(json!({"emptyObject": {}, "emptyArray": []})),
@@ -585,35 +732,29 @@ mod tests {
             &MetadataLoadResult::Parsed(json!({})),
         );
 
-        let added_object = added
-            .children
-            .iter()
-            .find(|node| node.path == "emptyObject")
-            .unwrap_or_else(|| panic!("missing diff child for emptyObject: {added:#?}"));
-        let added_array = added
-            .children
-            .iter()
-            .find(|node| node.path == "emptyArray")
-            .unwrap_or_else(|| panic!("missing diff child for emptyArray: {added:#?}"));
-        let removed_object = removed
-            .children
-            .iter()
-            .find(|node| node.path == "emptyObject")
-            .unwrap_or_else(|| panic!("missing diff child for emptyObject: {removed:#?}"));
-        let removed_array = removed
-            .children
-            .iter()
-            .find(|node| node.path == "emptyArray")
-            .unwrap_or_else(|| panic!("missing diff child for emptyArray: {removed:#?}"));
+        for (case_name, diff) in [("added", &added), ("removed", &removed)] {
+            let object = diff
+                .children
+                .iter()
+                .find(|node| node.path == "emptyObject")
+                .unwrap_or_else(|| panic!("[{case_name}] missing emptyObject child: {diff:#?}"));
+            let array = diff
+                .children
+                .iter()
+                .find(|node| node.path == "emptyArray")
+                .unwrap_or_else(|| panic!("[{case_name}] missing emptyArray child: {diff:#?}"));
 
-        assert_eq!(added_object.status, DiffStatus::Added);
-        assert_eq!(added_array.status, DiffStatus::Added);
-        assert_eq!(removed_object.status, DiffStatus::Removed);
-        assert_eq!(removed_array.status, DiffStatus::Removed);
-        assert!(added_object.children.is_empty());
-        assert!(added_array.children.is_empty());
-        assert!(removed_object.children.is_empty());
-        assert!(removed_array.children.is_empty());
+            assert_eq!(
+                object.status,
+                DiffStatus::Unchanged,
+                "[{case_name}] empty object paired with absence should be Unchanged"
+            );
+            assert_eq!(
+                array.status,
+                DiffStatus::Unchanged,
+                "[{case_name}] empty array paired with absence should be Unchanged"
+            );
+        }
     }
 
     #[test]
@@ -665,7 +806,7 @@ mod tests {
     }
 
     #[test]
-    fn matches_lines_by_line_name_and_direction() {
+    fn matches_lines_by_line_name_and_direction_regardless_of_position() {
         let left = MetadataLoadResult::Parsed(json!({
             "Lines": [
                 {"LineName": "B932", "Direction": "Terminal", "PriceDescription": "1"},
@@ -687,18 +828,23 @@ mod tests {
             .unwrap_or_else(|| panic!("missing diff child for Lines: {diff:#?}"));
 
         assert!(
-            lines
-                .children
-                .iter()
-                .any(|node| node.status == DiffStatus::Reordered),
-            "expected a reorder node in Lines diff: {lines:#?}"
+            lines.children.iter().any(|node| {
+                node.path == "Lines[B932|Terminal]" && node.status == DiffStatus::Unchanged
+            }),
+            "B932 should match by key and be Unchanged: {lines:#?}"
+        );
+        assert!(
+            lines.children.iter().any(|node| {
+                node.path == "Lines[M375|Downtown]" && node.status == DiffStatus::Modified
+            }),
+            "M375 should match by key and be Modified (PriceDescription differs): {lines:#?}"
         );
         assert!(
             lines
                 .children
                 .iter()
-                .any(|node| { node.path.contains("M375") && node.status == DiffStatus::Modified }),
-            "expected modified keyed line diff for M375: {lines:#?}"
+                .all(|node| node.status != DiffStatus::Reordered),
+            "no reorder node should be emitted (algorithm no longer surfaces position changes for Lines): {lines:#?}"
         );
     }
 
@@ -748,7 +894,7 @@ mod tests {
     }
 
     #[test]
-    fn marks_added_route_stop_when_business_key_only_exists_on_right() {
+    fn marks_added_route_stop_when_name_only_exists_on_right() {
         let left = MetadataLoadResult::Parsed(json!({
             "Lines": [{"LineName": "B932", "Direction": "Terminal", "RouteStops": []}]
         }));
@@ -765,14 +911,66 @@ mod tests {
 
         assert!(
             changes.iter().any(|node| {
-                node.path.contains("RouteStops[8|CurrentStop]") && node.status == DiffStatus::Added
+                node.path.contains("RouteStops[CurrentStop]") && node.status == DiffStatus::Added
             }),
             "expected added keyed route stop in flattened changes: {changes:#?}"
         );
     }
 
     #[test]
-    fn creates_error_for_ambiguous_business_key() {
+    fn route_stop_sequence_shift_is_suppressed_in_diff() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "Lines": [{
+                "LineName": "B932",
+                "Direction": "Terminal",
+                "RouteStops": [
+                    {"Sequence": 1, "Name": "Alpha"},
+                    {"Sequence": 2, "Name": "Beta"},
+                    {"Sequence": 3, "Name": "Gamma"}
+                ]
+            }]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "Lines": [{
+                "LineName": "B932",
+                "Direction": "Terminal",
+                "RouteStops": [
+                    {"Sequence": 1, "Name": "Alpha"},
+                    {"Sequence": 2, "Name": "NewStop"},
+                    {"Sequence": 3, "Name": "Beta"},
+                    {"Sequence": 4, "Name": "Gamma"}
+                ]
+            }]
+        }));
+
+        let diff = compare_metadata(&left, &right);
+        let changes = flatten_changes(&diff);
+
+        assert!(
+            changes.iter().any(|n| {
+                n.path == "Lines[B932|Terminal].RouteStops[NewStop]"
+                    && n.status == DiffStatus::Added
+            }),
+            "NewStop should be Added: {changes:#?}"
+        );
+        assert!(
+            changes
+                .iter()
+                .all(|n| !n.path.ends_with(".Sequence")),
+            "Sequence diffs must be suppressed everywhere: {changes:#?}"
+        );
+        assert!(
+            changes
+                .iter()
+                .all(|n| n.path != "Lines[B932|Terminal].RouteStops[Alpha]"
+                    && n.path != "Lines[B932|Terminal].RouteStops[Beta]"
+                    && n.path != "Lines[B932|Terminal].RouteStops[Gamma]"),
+            "Alpha/Beta/Gamma differ only by Sequence — none should appear in the change list: {changes:#?}"
+        );
+    }
+
+    #[test]
+    fn duplicate_keys_match_consumptively_with_occurrence_suffix() {
         let left = MetadataLoadResult::Parsed(json!({
             "GroupItems": [
                 {"SequenceNo": "①", "LineNames": "B932"},
@@ -792,13 +990,25 @@ mod tests {
             group_items
                 .children
                 .iter()
-                .any(|node| node.status == DiffStatus::Error),
-            "expected error node for ambiguous business key: {group_items:#?}"
+                .all(|node| node.status != DiffStatus::Error),
+            "duplicates should no longer raise an error: {group_items:#?}"
+        );
+        assert!(
+            group_items.children.iter().any(|n| {
+                n.path == "GroupItems[①#1]" && n.status == DiffStatus::Removed
+            }),
+            "first occurrence should be Removed with #1 suffix: {group_items:#?}"
+        );
+        assert!(
+            group_items.children.iter().any(|n| {
+                n.path == "GroupItems[①#2]" && n.status == DiffStatus::Removed
+            }),
+            "second occurrence should be Removed with #2 suffix: {group_items:#?}"
         );
     }
 
     #[test]
-    fn continues_comparing_unique_keyed_items_when_another_key_is_ambiguous() {
+    fn duplicate_keys_pair_in_occurrence_order() {
         let left = MetadataLoadResult::Parsed(json!({
             "GroupItems": [
                 {"SequenceNo": "①", "LineNames": "B932"},
@@ -808,6 +1018,7 @@ mod tests {
         }));
         let right = MetadataLoadResult::Parsed(json!({
             "GroupItems": [
+                {"SequenceNo": "①", "LineNames": "B932"},
                 {"SequenceNo": "②", "LineNames": "M198"}
             ]
         }));
@@ -820,17 +1031,22 @@ mod tests {
             .unwrap_or_else(|| panic!("missing diff child for GroupItems: {diff:#?}"));
 
         assert!(
-            group_items
-                .children
-                .iter()
-                .any(|node| node.status == DiffStatus::Error && node.summary.contains("①")),
-            "expected ambiguity error node for duplicate key: {group_items:#?}"
+            group_items.children.iter().any(|n| {
+                n.path == "GroupItems[①#1]" && n.status == DiffStatus::Unchanged
+            }),
+            "①#1 (B932 vs B932) should be Unchanged: {group_items:#?}"
         );
         assert!(
-            group_items.children.iter().any(|node| {
-                node.path.contains("GroupItems[②]") && node.status == DiffStatus::Modified
+            group_items.children.iter().any(|n| {
+                n.path == "GroupItems[①#2]" && n.status == DiffStatus::Removed
             }),
-            "expected unique keyed item to still be compared: {group_items:#?}"
+            "①#2 (M375 only on left) should be Removed: {group_items:#?}"
+        );
+        assert!(
+            group_items.children.iter().any(|n| {
+                n.path == "GroupItems[②]" && n.status == DiffStatus::Modified
+            }),
+            "② is unique on each side and should be Modified (M197 -> M198) without #N suffix: {group_items:#?}"
         );
     }
 
@@ -905,6 +1121,130 @@ mod tests {
     }
 
     #[test]
+    fn schema_known_field_is_visible_even_when_absent_on_both_sides() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "Lines": [{
+                "LineName": "B932",
+                "Direction": "Terminal",
+                "RouteStops": [{"Sequence": 1, "Name": "Origin", "RoadName": "Main"}]
+            }]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "Lines": [{
+                "LineName": "B932",
+                "Direction": "Terminal",
+                "RouteStops": [{"Sequence": 1, "Name": "Origin", "RoadName": "Main"}]
+            }]
+        }));
+
+        let diff = compare_metadata(&left, &right);
+        let route_stop = locate(
+            &diff,
+            "Lines[B932|Terminal].RouteStops[Origin]",
+        );
+
+        let building_type = route_stop
+            .children
+            .iter()
+            .find(|node| node.path.ends_with(".BuildingType"))
+            .unwrap_or_else(|| {
+                panic!("schema-known BuildingType missing from route stop: {route_stop:#?}")
+            });
+
+        assert_eq!(building_type.status, DiffStatus::Unchanged);
+        assert_eq!(building_type.left_value.as_deref(), Some("null"));
+        assert_eq!(building_type.right_value.as_deref(), Some("null"));
+    }
+
+    #[test]
+    fn missing_schema_field_equals_explicit_null() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "Lines": [{
+                "LineName": "B932",
+                "Direction": "Terminal",
+                "RouteStops": [{"Sequence": 1, "Name": "Origin", "BuildingType": null}]
+            }]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "Lines": [{
+                "LineName": "B932",
+                "Direction": "Terminal",
+                "RouteStops": [{"Sequence": 1, "Name": "Origin"}]
+            }]
+        }));
+
+        let diff = compare_metadata(&left, &right);
+        let route_stop = locate(
+            &diff,
+            "Lines[B932|Terminal].RouteStops[Origin]",
+        );
+
+        let building_type = route_stop
+            .children
+            .iter()
+            .find(|node| node.path.ends_with(".BuildingType"))
+            .unwrap_or_else(|| panic!("BuildingType missing: {route_stop:#?}"));
+
+        assert_eq!(
+            building_type.status,
+            DiffStatus::Unchanged,
+            "absent on right vs explicit null on left should be Unchanged: {building_type:#?}"
+        );
+    }
+
+    #[test]
+    fn missing_schema_field_vs_value_is_modified_with_null_placeholder() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "Lines": [{
+                "LineName": "B932",
+                "Direction": "Terminal",
+                "RouteStops": [{"Sequence": 1, "Name": "Origin"}]
+            }]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "Lines": [{
+                "LineName": "B932",
+                "Direction": "Terminal",
+                "RouteStops": [{"Sequence": 1, "Name": "Origin", "BuildingType": "地铁"}]
+            }]
+        }));
+
+        let diff = compare_metadata(&left, &right);
+        let route_stop = locate(
+            &diff,
+            "Lines[B932|Terminal].RouteStops[Origin]",
+        );
+
+        let building_type = route_stop
+            .children
+            .iter()
+            .find(|node| node.path.ends_with(".BuildingType"))
+            .unwrap_or_else(|| panic!("BuildingType missing: {route_stop:#?}"));
+
+        assert_eq!(building_type.status, DiffStatus::Modified);
+        assert_eq!(building_type.left_value.as_deref(), Some("null"));
+        assert_eq!(building_type.right_value.as_deref(), Some("\"地铁\""));
+    }
+
+    fn locate<'a>(root: &'a super::DiffNode, path: &str) -> &'a super::DiffNode {
+        fn walk<'a>(
+            node: &'a super::DiffNode,
+            target: &str,
+        ) -> Option<&'a super::DiffNode> {
+            if node.path == target {
+                return Some(node);
+            }
+            for child in &node.children {
+                if let Some(found) = walk(child, target) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        walk(root, path).unwrap_or_else(|| panic!("path {path} not found in diff: {root:#?}"))
+    }
+
+    #[test]
     fn keeps_error_node_visible_in_flattened_results() {
         let left = MetadataLoadResult::Error(CompareError::MissingStopPlateMetadata);
         let right = MetadataLoadResult::Parsed(json!({"StopName": "A"}));
@@ -928,39 +1268,131 @@ mod tests {
     }
 
     #[test]
-    fn suppresses_false_inventory_diffs_for_ambiguous_business_keys() {
+    fn default_equivalence_map_collapses_metro_and_hospital_aliases() {
         let left = MetadataLoadResult::Parsed(json!({
-            "GroupItems": [
-                {"SequenceNo": "①", "LineNames": "B932"},
-                {"SequenceNo": "①", "LineNames": "M375"}
-            ]
+            "Lines": [{
+                "LineName": "B932",
+                "Direction": "Terminal",
+                "RouteStops": [
+                    {"Sequence": 1, "Name": "Alpha", "BuildingType": "Metro"},
+                    {"Sequence": 2, "Name": "Beta",  "BuildingType": "Hospital"}
+                ]
+            }]
         }));
         let right = MetadataLoadResult::Parsed(json!({
-            "GroupItems": [
-                {"SequenceNo": "①", "LineNames": "B932"}
-            ]
+            "Lines": [{
+                "LineName": "B932",
+                "Direction": "Terminal",
+                "RouteStops": [
+                    {"Sequence": 1, "Name": "Alpha", "BuildingType": "地铁站"},
+                    {"Sequence": 2, "Name": "Beta",  "BuildingType": "医院"}
+                ]
+            }]
         }));
 
         let diff = compare_metadata(&left, &right);
-        let group_items = diff
-            .children
-            .iter()
-            .find(|node| node.path == "GroupItems")
-            .unwrap_or_else(|| panic!("missing diff child for GroupItems: {diff:#?}"));
+        let changes = flatten_changes(&diff);
+        assert!(
+            changes.is_empty(),
+            "Metro↔地铁站 / Hospital↔医院 should collapse to Unchanged: {changes:#?}"
+        );
+    }
+
+    #[test]
+    fn unmapped_alias_still_modifies() {
+        // "Airport" is not in the default equivalence map → real diff against "机场".
+        let left = MetadataLoadResult::Parsed(json!({
+            "Lines": [{
+                "LineName": "B932", "Direction": "Terminal",
+                "RouteStops": [{"Sequence": 1, "Name": "X", "BuildingType": "Airport"}]
+            }]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "Lines": [{
+                "LineName": "B932", "Direction": "Terminal",
+                "RouteStops": [{"Sequence": 1, "Name": "X", "BuildingType": "机场"}]
+            }]
+        }));
+        let diff = compare_metadata(&left, &right);
+        let changes = flatten_changes(&diff);
+        assert!(
+            changes.iter().any(|n| {
+                n.path == "Lines[B932|Terminal].RouteStops[X].BuildingType"
+                    && n.status == DiffStatus::Modified
+            }),
+            "unmapped alias must still surface as Modified: {changes:#?}"
+        );
+    }
+
+    #[test]
+    fn empty_string_null_and_missing_field_are_all_equivalent() {
+        let cases = [
+            (json!({"a": ""}), json!({"a": null})),
+            (json!({"a": ""}), json!({})),
+            (json!({"a": null}), json!({})),
+            (json!({"a": ""}), json!({"a": ""})),
+            (json!({}), json!({})),
+        ];
+
+        for (i, (left, right)) in cases.iter().enumerate() {
+            let diff = compare_metadata(
+                &MetadataLoadResult::Parsed(left.clone()),
+                &MetadataLoadResult::Parsed(right.clone()),
+            );
+            let changes = flatten_changes(&diff);
+            assert!(
+                changes.iter().all(|n| n.status == DiffStatus::Unchanged),
+                "case {i}: expected no changes for {left:?} vs {right:?}, got: {changes:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn loop_route_with_repeated_stop_names_compares_consumptively() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "Lines": [{
+                "LineName": "M103",
+                "Direction": "下沙总站",
+                "RouteStops": [
+                    {"Sequence": 1, "Name": "下沙总站"},
+                    {"Sequence": 5, "Name": "田面"},
+                    {"Sequence": 12, "Name": "福田水围村"},
+                    {"Sequence": 20, "Name": "福田水围村"},
+                    {"Sequence": 27, "Name": "田面"},
+                    {"Sequence": 32, "Name": "下沙总站"}
+                ]
+            }]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "Lines": [{
+                "LineName": "M103",
+                "Direction": "下沙总站",
+                "RouteStops": [
+                    {"Sequence": 1, "Name": "下沙总站"},
+                    {"Sequence": 5, "Name": "田面"},
+                    {"Sequence": 13, "Name": "福田水围村"},
+                    {"Sequence": 21, "Name": "福田水围村"},
+                    {"Sequence": 28, "Name": "田面"},
+                    {"Sequence": 33, "Name": "下沙总站"}
+                ]
+            }]
+        }));
+
+        let diff = compare_metadata(&left, &right);
+        let changes = flatten_changes(&diff);
 
         assert!(
-            group_items
-                .children
-                .iter()
-                .any(|node| { node.status == DiffStatus::Error && node.summary.contains('①') }),
-            "expected ambiguity error node for duplicate key: {group_items:#?}"
+            changes.iter().all(|n| n.status != DiffStatus::Error),
+            "duplicate Names in a loop route must not produce errors: {changes:#?}"
         );
         assert!(
-            group_items.children.iter().all(|node| {
-                !(node.path.contains("GroupItems[①]")
-                    && matches!(node.status, DiffStatus::Added | DiffStatus::Removed))
-            }),
-            "ambiguous keys must not also emit added/removed nodes: {group_items:#?}"
+            changes.iter().all(|n| !n.path.ends_with(".Sequence")),
+            "Sequence diffs are suppressed; loop-route shift should not surface: {changes:#?}"
+        );
+        // Bodies otherwise identical; with Sequence suppressed nothing should remain.
+        assert!(
+            changes.is_empty(),
+            "loop route with only Sequence shifts should produce zero diffs: {changes:#?}"
         );
     }
 }

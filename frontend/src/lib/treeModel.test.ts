@@ -35,7 +35,7 @@ describe('buildTree', () => {
     const tree = buildTree({ HasHints: false, Hints: null, OriName: '' });
     expect((tree.children[0] as any).value).toBe('否');
     expect((tree.children[1] as any).value).toBe('—');
-    expect((tree.children[2] as any).value).toBe('(空)');
+    expect((tree.children[2] as any).value).toBe('—');
   });
 
   it('builds an array group with array-item children using arrayItemLabel', () => {
@@ -113,27 +113,27 @@ describe('buildMirrorRows', () => {
     });
   });
 
-  it('marks left-only leaves with status removed and rightValue null', () => {
+  it('renders missing side as em dash, not as null', () => {
     const diff: DiffNode = {
       path: '', status: 'modified', left_value: null, right_value: null, summary: '',
       children: [{ path: 'Hints', status: 'removed', left_value: '"x"', right_value: null, summary: '', children: [] }],
     };
     const rows = buildMirrorRows({ Hints: 'x' }, {}, diff);
-    const leaf = rows[0].children![0];
+    const leaf = rows[0].children!.find((c) => c.path === 'Hints')!;
     expect(leaf).toMatchObject({
-      path: 'Hints', leftValue: 'x', rightValue: null, status: 'removed',
+      path: 'Hints', leftValue: 'x', rightValue: '—', status: 'removed',
     });
   });
 
-  it('marks right-only leaves with status added and leftValue null', () => {
+  it('renders schema-known field absent on left as em-dash on left', () => {
     const diff: DiffNode = {
       path: '', status: 'modified', left_value: null, right_value: null, summary: '',
       children: [{ path: 'Hints', status: 'added', left_value: null, right_value: '"y"', summary: '', children: [] }],
     };
     const rows = buildMirrorRows({}, { Hints: 'y' }, diff);
-    const leaf = rows[0].children![0];
+    const leaf = rows[0].children!.find((c) => c.path === 'Hints')!;
     expect(leaf).toMatchObject({
-      path: 'Hints', leftValue: null, rightValue: 'y', status: 'added',
+      path: 'Hints', leftValue: '—', rightValue: 'y', status: 'added',
     });
   });
 
@@ -153,13 +153,112 @@ describe('buildMirrorRows', () => {
     });
   });
 
-  it('aligns array elements by index and pads the missing side', () => {
+  it('looks up nested RouteStop status using the backend keyed path', () => {
+    const diff: DiffNode = {
+      path: '', status: 'modified', left_value: null, right_value: null, summary: '',
+      children: [
+        {
+          path: 'Lines', status: 'modified', left_value: null, right_value: null, summary: '',
+          children: [
+            {
+              path: 'Lines[718|宝安壹方中心]', status: 'modified', left_value: null, right_value: null, summary: '',
+              children: [
+                {
+                  path: 'Lines[718|宝安壹方中心].RouteStops', status: 'modified', left_value: null, right_value: null, summary: '',
+                  children: [
+                    {
+                      path: 'Lines[718|宝安壹方中心].RouteStops[西乡恒生医院]', status: 'modified', left_value: null, right_value: null, summary: '',
+                      children: [
+                        {
+                          path: 'Lines[718|宝安壹方中心].RouteStops[西乡恒生医院].BuildingType',
+                          status: 'modified', left_value: '"Hospital"', right_value: '"医院"', summary: '', children: [],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const left = {
+      Lines: [{
+        LineName: '718', Direction: '宝安壹方中心',
+        RouteStops: [{ Name: '西乡恒生医院', BuildingType: 'Hospital', RoadName: '银田路' }],
+      }],
+    };
+    const right = {
+      Lines: [{
+        LineName: '718', Direction: '宝安壹方中心',
+        RouteStops: [{ Name: '西乡恒生医院', BuildingType: '医院', RoadName: '银田路' }],
+      }],
+    };
+    const rows = buildMirrorRows(left as JsonValue, right as JsonValue, diff);
+
+    function findByPath(rs: any[], target: string): any | undefined {
+      for (const r of rs) {
+        if (r.path === target) return r;
+        if (r.children) {
+          const found = findByPath(r.children, target);
+          if (found) return found;
+        }
+      }
+      return undefined;
+    }
+
+    const buildingTypeLeaf = findByPath(
+      rows,
+      'Lines[718|宝安壹方中心].RouteStops[西乡恒生医院].BuildingType',
+    );
+    expect(buildingTypeLeaf).toBeDefined();
+    expect(buildingTypeLeaf.status).toBe('modified');
+    // Through formatValue (BuildingType formatter): unknown enum passes through, mapped enum translates.
+    expect(buildingTypeLeaf.leftValue).toBe('Hospital');
+    expect(buildingTypeLeaf.rightValue).toBe('医院');
+  });
+
+  it('sorts RouteStops by Sequence ascending in display order', () => {
+    const left = {
+      Lines: [{
+        LineName: '718', Direction: 'X',
+        RouteStops: [
+          { Name: 'C', Sequence: 2 },
+          { Name: 'A', Sequence: 0 },
+          { Name: 'B', Sequence: 1 },
+        ],
+      }],
+    };
+    const right = { Lines: [{ LineName: '718', Direction: 'X', RouteStops: [] }] };
+    const noDiffRoot: DiffNode = {
+      path: '', status: 'unchanged', left_value: null, right_value: null, summary: '', children: [],
+    };
+    const rows = buildMirrorRows(left as JsonValue, right as JsonValue, noDiffRoot);
+
+    function findByPath(rs: any[], target: string): any | undefined {
+      for (const r of rs) {
+        if (r.path === target) return r;
+        if (r.children) {
+          const found = findByPath(r.children, target);
+          if (found) return found;
+        }
+      }
+      return undefined;
+    }
+    const routeStops = findByPath(rows, 'Lines[718|X].RouteStops');
+    expect(routeStops).toBeDefined();
+    const orderedNames = routeStops.children.map((c: any) => c.path.split('[').pop()?.replace(']', ''));
+    expect(orderedNames).toEqual(['A', 'B', 'C']);
+  });
+
+  it('aligns Lines by business key and pads the missing side', () => {
     const diff: DiffNode = {
       path: '', status: 'modified', left_value: null, right_value: null, summary: '',
       children: [
         {
           path: 'Lines', status: 'modified', left_value: null, right_value: null, summary: '', children: [
-            { path: 'Lines[1]', status: 'added', left_value: null, right_value: null, summary: '', children: [] },
+            { path: 'Lines[M375]', status: 'added', left_value: null, right_value: null, summary: '', children: [] },
           ],
         },
       ],
@@ -172,10 +271,13 @@ describe('buildMirrorRows', () => {
     const lines = rows[0].children![0];
     expect(lines.kind).toBe('group');
     expect(lines.children).toHaveLength(2);
-    expect(lines.children![1].status).toBe('added');
-    // The missing left item still produces a row whose leaves render as null on left.
-    const itemLeaves = lines.children![1].children!;
-    expect(itemLeaves.every((l) => l.leftValue === null)).toBe(true);
+    const newLine = lines.children!.find((c) => c.path === 'Lines[M375]')!;
+    expect(newLine).toBeDefined();
+    expect(newLine.status).toBe('added');
+    // The missing left item still produces a row whose leaves all render as a blank
+    // placeholder on left (em-dash, possibly with extra context per field formatter).
+    const itemLeaves = newLine.children!;
+    expect(itemLeaves.every((l) => l.leftValue !== null && l.leftValue.startsWith('—'))).toBe(true);
   });
 });
 

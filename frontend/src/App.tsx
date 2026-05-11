@@ -9,7 +9,7 @@ import { SoloTree } from './components/SoloTree';
 import { MirrorTree } from './components/MirrorTree';
 import { DirectoryList } from './components/DirectoryList';
 import { useWorkbench } from './features/workbench/useWorkbench';
-import { buildMirrorRows } from './lib/treeModel';
+import { buildMirrorRows, hasDiffDeep } from './lib/treeModel';
 import type { MirrorRow } from './lib/treeModel';
 import type { DiffNode, DiffStatus, JsonValue } from './lib/types';
 
@@ -338,38 +338,6 @@ function ImagePane({ path, name, transform }: { path: string; name: string; tran
 // Diff report (bottom strip on mirror view)
 // ============================================================
 
-interface ReportItem {
-  path: string;
-  label: string;     // breadcrumb
-  status: DiffStatus;
-  leftValue: string | null;
-  rightValue: string | null;
-}
-
-function collectReportItems(rows: MirrorRow[]): ReportItem[] {
-  const out: ReportItem[] = [];
-  function walk(rs: MirrorRow[], crumbs: string[]) {
-    for (const r of rs) {
-      if (r.kind === 'leaf') {
-        if (r.status !== 'unchanged') {
-          out.push({
-            path: r.path,
-            label: [...crumbs, r.label].filter(Boolean).join(' › '),
-            status: r.status,
-            leftValue: r.leftValue,
-            rightValue: r.rightValue,
-          });
-        }
-      } else if (r.children) {
-        const next = r.label ? [...crumbs, r.label] : crumbs;
-        walk(r.children, next);
-      }
-    }
-  }
-  walk(rows, []);
-  return out;
-}
-
 const STATUS_LABEL: Record<DiffStatus, string> = {
   unchanged: '未变',
   modified: '改',
@@ -388,6 +356,39 @@ const STATUS_TO_BADGE: Record<DiffStatus, string> = {
   error: 'badge--err',
 };
 
+interface DiffCounts {
+  modified: number;
+  added: number;
+  removed: number;
+  total: number;
+}
+
+function tallyDiff(rows: MirrorRow[]): DiffCounts {
+  const counts: DiffCounts = { modified: 0, added: 0, removed: 0, total: 0 };
+  function walk(rs: MirrorRow[]) {
+    for (const r of rs) {
+      if (r.kind === 'leaf') {
+        if (r.status === 'modified') { counts.modified++; counts.total++; }
+        else if (r.status === 'added') { counts.added++; counts.total++; }
+        else if (r.status === 'removed') { counts.removed++; counts.total++; }
+        continue;
+      }
+      // Array-item Added/Removed counts as a single unit (no nested descent).
+      const isItemAddRem =
+        r.variant === 'array-item' && (r.status === 'added' || r.status === 'removed');
+      if (isItemAddRem) {
+        if (r.status === 'added') counts.added++;
+        else counts.removed++;
+        counts.total++;
+        continue;
+      }
+      if (r.children) walk(r.children);
+    }
+  }
+  walk(rows);
+  return counts;
+}
+
 function DiffReport({
   left, right, diffRoot,
 }: {
@@ -396,16 +397,8 @@ function DiffReport({
   diffRoot: DiffNode | null;
 }) {
   const rows = useMemo(() => buildMirrorRows(left, right, diffRoot), [left, right, diffRoot]);
-  const items = useMemo(() => collectReportItems(rows), [rows]);
+  const counts = useMemo(() => tallyDiff(rows), [rows]);
   const [collapsed, setCollapsed] = useState(false);
-
-  const counts = useMemo(() => {
-    const c: Record<DiffStatus, number> = {
-      unchanged: 0, modified: 0, added: 0, removed: 0, reordered: 0, error: 0,
-    };
-    for (const it of items) c[it.status]++;
-    return c;
-  }, [items]);
 
   return (
     <div className={`diff-report${collapsed ? ' diff-report--collapsed' : ''}`}>
@@ -420,40 +413,122 @@ function DiffReport({
           差异汇总
         </span>
         <span className="diff-report__counts">
-          {items.length === 0 ? (
+          {counts.total === 0 ? (
             <span className="controlbar__summary">两份元数据完全一致</span>
           ) : (
             <>
               {counts.modified > 0 && <span className="badge badge--mod">{counts.modified} 改</span>}
               {counts.removed > 0 && <span className="badge badge--rem">{counts.removed} 仅左</span>}
               {counts.added > 0 && <span className="badge badge--add">{counts.added} 仅右</span>}
-              {counts.reordered > 0 && <span className="badge badge--neu">{counts.reordered} 顺序</span>}
-              <span className="diff-report__total">共 {items.length} 项</span>
+              <span className="diff-report__total">共 {counts.total} 项</span>
             </>
           )}
         </span>
       </button>
-      {!collapsed && items.length > 0 && (
+      {!collapsed && counts.total > 0 && (
         <div className="diff-report__body">
-          {items.map((it) => (
-            <div key={it.path} className={`diff-report__row diff-report__row--${it.status}`}>
-              <span className={`badge ${STATUS_TO_BADGE[it.status]}`}>{STATUS_LABEL[it.status]}</span>
-              <span className="diff-report__path">{it.label}</span>
-              <span className="diff-report__values">
-                {it.status === 'modified' && (
-                  <>
-                    <span className="diff-report__old">{it.leftValue}</span>
-                    <span className="diff-report__arrow">→</span>
-                    <span className="diff-report__new">{it.rightValue}</span>
-                  </>
-                )}
-                {it.status === 'removed' && <span className="diff-report__old">{it.leftValue}</span>}
-                {it.status === 'added' && <span className="diff-report__new">{it.rightValue}</span>}
-              </span>
-            </div>
-          ))}
+          <DiffTree rows={rows} />
         </div>
       )}
+    </div>
+  );
+}
+
+function DiffTree({ rows }: { rows: MirrorRow[] }) {
+  return (
+    <>
+      {rows.map((row) => (
+        <DiffTreeNode key={row.path || 'root'} row={row} level={0} />
+      ))}
+    </>
+  );
+}
+
+function DiffTreeNode({ row, level }: { row: MirrorRow; level: number }) {
+  if (row.status === 'unchanged' && !hasDiffDeep(row)) return null;
+
+  // root group: render children only, no header
+  if (row.variant === 'object-root') {
+    return (
+      <>
+        {row.children?.map((c) => (
+          <DiffTreeNode key={c.path} row={c} level={level} />
+        ))}
+      </>
+    );
+  }
+
+  if (row.kind === 'leaf') {
+    if (row.status === 'unchanged') return null;
+    return <DiffLeaf row={row} level={level} />;
+  }
+
+  // Array-item Added/Removed: render the colored header without descending into fields.
+  const isItemAddRem =
+    row.variant === 'array-item' && (row.status === 'added' || row.status === 'removed');
+
+  if (isItemAddRem) {
+    return <DiffGroupHead row={row} level={level} mode="leaf" />;
+  }
+
+  const changedChildren = row.children?.filter((c) => c.status !== 'unchanged' || hasDiffDeep(c)) ?? [];
+  if (changedChildren.length === 0) return null;
+  return (
+    <>
+      <DiffGroupHead row={row} level={level} mode="branch" />
+      {changedChildren.map((c) => (
+        <DiffTreeNode key={c.path} row={c} level={level + 1} />
+      ))}
+    </>
+  );
+}
+
+function DiffGroupHead({
+  row, level, mode,
+}: { row: MirrorRow; level: number; mode: 'branch' | 'leaf' }) {
+  const isAddRem = row.status === 'added' || row.status === 'removed';
+  // For an array-item that exists exclusively on one side, color it green (added).
+  const colorStatus =
+    row.variant === 'array-item' && isAddRem ? 'added' : row.status;
+  const label =
+    row.status === 'added' ? '仅右'
+    : row.status === 'removed' ? '仅左'
+    : row.status === 'modified' ? '改'
+    : row.status === 'error' ? '错'
+    : '';
+  return (
+    <div
+      className={`diff-tree__group diff-tree__group--${colorStatus} diff-tree__group--${mode}`}
+      style={{ paddingLeft: 8 + level * 14 }}
+    >
+      {label && <span className={`badge ${STATUS_TO_BADGE[colorStatus]}`}>{label}</span>}
+      <span className="diff-tree__label">{row.label}</span>
+      {row.variant === 'array' && typeof row.count === 'number' && (
+        <span className="diff-tree__count">({row.count} 项)</span>
+      )}
+    </div>
+  );
+}
+
+function DiffLeaf({ row, level }: { row: MirrorRow; level: number }) {
+  return (
+    <div
+      className={`diff-tree__leaf diff-tree__leaf--${row.status}`}
+      style={{ paddingLeft: 8 + level * 14 }}
+    >
+      <span className={`badge ${STATUS_TO_BADGE[row.status]}`}>{STATUS_LABEL[row.status]}</span>
+      <span className="diff-tree__label">{row.label}</span>
+      <span className="diff-tree__values">
+        {row.status === 'modified' && (
+          <>
+            <span className="diff-tree__old">{row.leftValue}</span>
+            <span className="diff-tree__arrow">→</span>
+            <span className="diff-tree__new">{row.rightValue}</span>
+          </>
+        )}
+        {row.status === 'removed' && <span className="diff-tree__old">{row.leftValue}</span>}
+        {row.status === 'added' && <span className="diff-tree__new">{row.rightValue}</span>}
+      </span>
     </div>
   );
 }

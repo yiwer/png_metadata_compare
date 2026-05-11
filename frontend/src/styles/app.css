@@ -142,6 +142,12 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 .group-head__count { color: var(--text-tertiary); font-size: 10px; letter-spacing: 0; text-transform: none; }
 .group-head__toggle { color: var(--text-tertiary); margin-right: var(--sp-1); }
 
+/* Status-colored headers (so add/rem/mod stand out without expanding the group). */
+.group-head--add { background: var(--add-bg); border-left-color: var(--add-text); color: var(--add-text); }
+.group-head--rem { background: var(--rem-bg); border-left-color: var(--rem-text); color: var(--rem-text); }
+.group-head--mod { background: var(--mod-bg); border-left-color: var(--mod-arrow); color: var(--mod-arrow); }
+.group-head--err { background: rgba(255, 124, 224, 0.10); border-left-color: var(--err-text); color: var(--err-text); }
+
 /* === Tree key/value rows === */
 .kv {
   display: grid;
@@ -377,21 +383,53 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 /* === Directory list === */
 .dirlist { display: grid; grid-template-rows: auto auto 1fr; height: 100%; min-height: 0; }
 .dirlist__stats {
-  display: flex;
-  gap: var(--sp-5);
-  padding: var(--sp-3);
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--sp-3);
+  padding: var(--sp-4);
   background: var(--bg-controlbar);
   background-image: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
   border-bottom: 1px solid var(--border-subtle);
   box-shadow: var(--bar-edge-top);
 }
-.dirlist__stat { font-size: var(--fs-xs); color: var(--text-secondary); }
-.dirlist__stat-num { font: 600 var(--fs-xl)/1 var(--font-mono); display: block; }
-.dirlist__stat--mod .dirlist__stat-num { color: var(--mod-text); }
-.dirlist__stat--rem .dirlist__stat-num { color: var(--rem-text); }
-.dirlist__stat--add .dirlist__stat-num { color: var(--add-text); }
-.dirlist__stat--eq  .dirlist__stat-num { color: var(--text-secondary); }
-.dirlist__stat--total .dirlist__stat-num { color: var(--text-tertiary); }
+.dirlist__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--sp-1);
+  padding: var(--sp-4) var(--sp-4);
+  border-radius: 8px;
+  background: var(--bg-elevated, rgba(255,255,255,0.03));
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--border-default);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  min-height: 72px;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.dirlist__stat-num {
+  font: 600 28px/1 var(--font-mono);
+  color: var(--text-primary);
+  letter-spacing: 0;
+}
+.dirlist__stat-label {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.dirlist__stat--mod   { border-left-color: var(--mod-text);  background: color-mix(in srgb, var(--mod-bg) 70%, transparent); }
+.dirlist__stat--mod   .dirlist__stat-num { color: var(--mod-text); }
+.dirlist__stat--rem   { border-left-color: var(--rem-text);  background: color-mix(in srgb, var(--rem-bg) 70%, transparent); }
+.dirlist__stat--rem   .dirlist__stat-num { color: var(--rem-text); }
+.dirlist__stat--add   { border-left-color: var(--add-text);  background: color-mix(in srgb, var(--add-bg) 70%, transparent); }
+.dirlist__stat--add   .dirlist__stat-num { color: var(--add-text); }
+.dirlist__stat--eq    { border-left-color: var(--border-emph); }
+.dirlist__stat--eq    .dirlist__stat-num { color: var(--text-secondary); }
+.dirlist__stat--total { border-left-color: var(--border-emph); background: var(--bg-overlay); }
+.dirlist__stat--total .dirlist__stat-num { color: var(--text-primary); }
 .dirlist__chips { display: flex; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; }
 .dirlist__chip { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-xs); border: 1px solid var(--border-default); color: var(--text-secondary); }
 .dirlist__chip[data-active="true"] { background: var(--bg-overlay); border-color: var(--border-emph); color: var(--text-primary); }
@@ -602,6 +640,35 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 .diff-report__arrow { color: var(--text-tertiary); flex-shrink: 0; }
 .diff-report__row--modified .diff-report__old { color: var(--mod-text); text-decoration: none; opacity: 1; }
 .diff-report__row--modified .diff-report__new { color: var(--text-primary); }
+
+/* === Diff summary tree === */
+.diff-tree__group,
+.diff-tree__leaf {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 4px var(--sp-3);
+  font: var(--fs-sm)/var(--lh-sm) var(--font-mono);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.diff-tree__group { font-weight: 500; }
+.diff-tree__group--branch { color: var(--text-secondary); border-bottom-color: transparent; }
+.diff-tree__group--leaf { /* added/removed array-item — single colored row */ }
+.diff-tree__group--added { color: var(--add-text); background: var(--add-bg); }
+.diff-tree__group--removed { color: var(--rem-text); background: var(--rem-bg); }
+.diff-tree__group--modified { color: var(--mod-text); }
+.diff-tree__group--error { color: var(--err-text); }
+.diff-tree__label { word-break: break-all; }
+.diff-tree__count { color: var(--text-tertiary); font-size: 10px; }
+.diff-tree__values { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; word-break: break-all; margin-left: auto; }
+.diff-tree__leaf--modified { background: var(--mod-bg); }
+.diff-tree__leaf--added    { background: var(--add-bg); }
+.diff-tree__leaf--removed  { background: var(--rem-bg); }
+.diff-tree__old { color: var(--rem-text); text-decoration: line-through; opacity: 0.85; }
+.diff-tree__new { color: var(--add-text); }
+.diff-tree__arrow { color: var(--text-tertiary); flex-shrink: 0; }
+.diff-tree__leaf--modified .diff-tree__old { color: var(--mod-text); text-decoration: none; opacity: 1; }
+.diff-tree__leaf--modified .diff-tree__new { color: var(--text-primary); }
 
 /* === JSON pre === */
 .raw-json {

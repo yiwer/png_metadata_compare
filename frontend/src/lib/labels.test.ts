@@ -43,8 +43,10 @@ describe('formatValue', () => {
     expect(formatValue('Lines[0].ScheduledServiceDescription', null)).toBe('—（非定时班车）');
   });
 
-  it('formats empty string → "(空)"', () => {
-    expect(formatValue('StopName', '')).toBe('(空)');
+  it('formats empty string the same as null → "—"', () => {
+    expect(formatValue('StopName', '')).toBe('—');
+    expect(formatValue('StopName', null)).toBe('—');
+    expect(formatValue('StopName', undefined)).toBe('—');
   });
 
   it('renders booleans contextually', () => {

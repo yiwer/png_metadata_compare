@@ -3,7 +3,12 @@ export interface FieldDef {
   format?: (value: unknown) => string;
 }
 
-const yesNo = (v: unknown): string => (v === true ? '是' : v === false ? '否' : String(v));
+const yesNo = (v: unknown): string => {
+  if (v === true) return '是';
+  if (v === false) return '否';
+  if (v === null || v === undefined || v === '') return '—';
+  return String(v);
+};
 
 const BUILDING_TYPE: Record<string, string> = {
   地铁: '地铁换乘',
@@ -27,7 +32,15 @@ export const FIELD_DEFS: Record<string, FieldDef> = {
   Hints: { label: '温馨提示内容' },
   IsGroupPrint: { label: '含分站信息', format: yesNo },
   GroupItems: { label: '分站列表' },
-  IsBack: { label: '站牌朝向', format: (v) => (v === true ? '反面' : v === false ? '正面' : String(v)) },
+  IsBack: {
+    label: '站牌朝向',
+    format: (v) => {
+      if (v === true) return '反面';
+      if (v === false) return '正面';
+      if (v === null || v === undefined || v === '') return '—';
+      return String(v);
+    },
+  },
   FrameSize: { label: '站架尺寸' },
   Lines: { label: '停靠线路' },
   RenderTime: { label: '渲染时间' },
@@ -81,9 +94,9 @@ export const FIELD_DEFS: Record<string, FieldDef> = {
   'Lines[*].RouteStops[*].RoadName': { label: '所在道路' },
 };
 
-/** 把运行时路径（含数字下标）归一化为 schema key（用 `[*]` 占位）。 */
+/** 把运行时路径（含数字下标 / 业务键 / 重复后缀）归一化为 schema key（用 `[*]` 占位）。 */
 function normalizePath(path: string): string {
-  return path.replace(/\[\d+\]/g, '[*]');
+  return path.replace(/\[[^\]]*\]/g, '[*]');
 }
 
 /** 取路径最后一段作为最后兜底标签（如 "UnknownNested"）。 */
@@ -108,10 +121,69 @@ export function formatValue(path: string, value: unknown): string {
   const def = fieldDef(path);
   if (def?.format) return def.format(value);
 
-  if (value === null || value === undefined) return '—';
-  if (value === '') return '(空)';
+  if (isBlank(value)) return '—';
   if (typeof value === 'boolean') return value ? '是' : '否';
   return String(value);
+}
+
+/** 空字符串、null、undefined 视作同等"无值"。 */
+export function isBlank(value: unknown): boolean {
+  return value === null || value === undefined || value === '';
+}
+
+/**
+ * 根据 FIELD_DEFS 推导每个 normalized 父路径下声明过的子字段名。
+ * 例如父路径 "Lines[*].RouteStops[*]" → ["Name", "Sequence", "BuildingType", "RoadName"]。
+ */
+const SCHEMA_CHILDREN: ReadonlyMap<string, readonly string[]> = (() => {
+  const acc = new Map<string, Set<string>>();
+  for (const key of Object.keys(FIELD_DEFS)) {
+    const lastDot = key.lastIndexOf('.');
+    const parent = lastDot === -1 ? '' : key.slice(0, lastDot);
+    const child = lastDot === -1 ? key : key.slice(lastDot + 1);
+    let bucket = acc.get(parent);
+    if (!bucket) acc.set(parent, (bucket = new Set()));
+    bucket.add(child);
+  }
+  const out = new Map<string, readonly string[]>();
+  for (const [k, v] of acc) out.set(k, Array.from(v));
+  return out;
+})();
+
+export function schemaChildKeys(parentPath: string): readonly string[] {
+  return SCHEMA_CHILDREN.get(normalizePath(parentPath)) ?? [];
+}
+
+/**
+ * 业务键计算函数（与后端 src/diff.rs#business_key_for_path 对齐）。
+ * 仅用于路径段，不参与匹配本身；匹配在 treeModel.ts 中按消费式做。
+ * 返回 null 表示该项缺业务键 / 不参与 keyed 匹配。
+ */
+export type ArrayKeyFn = (item: unknown) => string | null;
+
+export function arrayKeyFn(arrayPath: string): ArrayKeyFn | null {
+  switch (normalizePath(arrayPath)) {
+    case 'Lines':
+      return (item) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        const ln = typeof o.LineName === 'string' ? o.LineName : null;
+        if (ln === null) return null;
+        const dir = typeof o.Direction === 'string' ? o.Direction : '';
+        return dir ? `${ln}|${dir}` : ln;
+      };
+    case 'GroupItems':
+      return (item) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        return typeof o.SequenceNo === 'string' ? o.SequenceNo : null;
+      };
+    case 'Lines[*].RouteStops':
+      return (item) => {
+        const o = (item ?? {}) as Record<string, unknown>;
+        return typeof o.Name === 'string' ? o.Name : null;
+      };
+    default:
+      return null;
+  }
 }
 
 export function arrayItemLabel(arrayPath: string, index: number, item: unknown): string {
