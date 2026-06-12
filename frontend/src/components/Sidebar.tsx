@@ -74,6 +74,16 @@ export function Sidebar({
     };
   }, [menu]);
 
+  useEffect(() => {
+    if (!pickMenu) return;
+    const close = (e: MouseEvent) => {
+      const inside = (e.target as HTMLElement).closest('.sidebar__pickmenu, .sidebar__slot-path');
+      if (!inside) setPickMenu(null);
+    };
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [pickMenu]);
+
   const counts = summary?.counts ?? null;
   const totalPairs = counts
     ? counts.identical + counts.different + counts.left_only + counts.right_only + counts.error

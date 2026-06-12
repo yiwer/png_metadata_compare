@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { loadRecent, removeRecent } from '../lib/recentDirs';
 import type { RecentKind, RecentPair } from '../lib/recentDirs';
 import type { Side, WorkbenchMode } from '../lib/types';
@@ -28,6 +28,7 @@ export function WelcomePane({
 }) {
   const kind: RecentKind = mode === 'directory' ? 'dir' : 'file';
   const [recent, setRecent] = useState<RecentPair[]>(() => loadRecent(kind));
+  useEffect(() => { setRecent(loadRecent(kind)); }, [kind]);
   const noun = mode === 'directory' ? '文件夹' : 'PNG 文件';
 
   const dropHandler = (side: Side) => (e: React.DragEvent) => {
