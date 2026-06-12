@@ -705,3 +705,32 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* ============ UnifiedTree（单树双值列） ============ */
+.utree { display: flex; flex-direction: column; height: 100%; min-width: 0; }
+.utree__cols { display: grid; grid-template-columns: minmax(140px, 200px) minmax(0,1fr) minmax(0,1fr); column-gap: var(--sp-4); align-items: baseline; }
+.utree__cols[data-solo] { grid-template-columns: minmax(140px, 200px) minmax(0,1fr); }
+.utree__head { padding: 6px 10px; border-bottom: 1px solid var(--border-default); color: var(--text-tertiary); font: var(--fs-xs)/var(--lh-xs) var(--font-mono); position: sticky; top: 0; background: var(--bg-page); z-index: 1; }
+.utree__col-side { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.utree__body { overflow-y: auto; flex: 1; padding-bottom: var(--sp-5); }
+.utree__nested { border-left: 1px solid var(--border-subtle); margin-left: 10px; content-visibility: auto; contain-intrinsic-size: auto 600px; }
+.utree__row { padding-top: 4px; padding-bottom: 4px; padding-right: 10px; border-radius: var(--r-sm); font: var(--fs-md)/var(--lh-md) var(--font-mono); }
+.utree__row:hover { background: var(--bg-hover); }
+.utree__key { color: var(--text-secondary); }
+.utree__val { color: var(--text-primary); word-break: break-all; position: relative; }
+.utree__row--modified { background: var(--mod-bg); }
+.utree__row--modified .utree__val--old { color: var(--mod-old); }
+.utree__row--modified .utree__val--new { color: var(--mod-new); }
+.utree__row--added { background: var(--add-bg); }
+.utree__row--added .utree__val { color: var(--add-text); }
+.utree__row--removed { background: var(--rem-bg); }
+.utree__row--removed .utree__val { color: var(--rem-text); }
+.utree__row--reordered { border-left: 3px solid var(--reord-bord); }
+.utree__row--error { background: var(--err-bg); }
+.utree__row--error .utree__val { color: var(--err-text); }
+.utree__unknown { margin-left: 6px; font-size: 10px; color: var(--text-tertiary); border: 1px solid var(--border-default); border-radius: var(--r-sm); padding: 0 4px; }
+.utree__copy { visibility: hidden; margin-left: 6px; border: none; background: none; color: var(--text-tertiary); cursor: pointer; font-size: var(--fs-xs); }
+.utree__row:hover .utree__copy, .group-head:hover .utree__copy { visibility: visible; }
+.utree__copy:hover { color: var(--accent); }
+@keyframes utree-flash { 0% { outline: 2px solid var(--accent); } 100% { outline: 2px solid transparent; } }
+.utree__row--flash { animation: utree-flash 0.9s ease-out 1; }
