@@ -1,4 +1,4 @@
-// frontend/src/components/DiffRail.test.tsx
+﻿// frontend/src/components/DiffRail.test.tsx
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { DiffRail } from './DiffRail';
@@ -7,8 +7,8 @@ import type { DiffEntry } from '../lib/diffList';
 // topGroup '线路 1 · B932' 与 buildDiffEntries 的就近分组输出对应：
 // ancestors=['停靠线路','线路 1 · B932'] → slice(1).join(' › ') = '线路 1 · B932'
 const entries: DiffEntry[] = [
-  { path: 'Lines[B932|东].Direction', topGroup: '线路 1 · B932', label: '开往方向', status: 'modified', leftValue: 'A', rightValue: 'B' },
-  { path: 'Lines[B932|东].NextStop', topGroup: '线路 1 · B932', label: '下一站', status: 'removed', leftValue: 'C', rightValue: '—' },
+  { path: 'Lines[B932].Direction', topGroup: '线路 1 · B932', label: '开往方向', status: 'modified', leftValue: 'A', rightValue: 'B' },
+  { path: 'Lines[B932].NextStop', topGroup: '线路 1 · B932', label: '下一站', status: 'removed', leftValue: 'C', rightValue: '—' },
   { path: 'StopName', topGroup: '', label: '中文站名', status: 'added', leftValue: '—', rightValue: 'D' },
 ];
 
@@ -24,7 +24,7 @@ describe('DiffRail', () => {
     const onJump = vi.fn();
     render(<DiffRail entries={entries} onJump={onJump} collapsed={false} onToggle={() => {}} />);
     fireEvent.click(screen.getByText(/开往方向/));
-    expect(onJump).toHaveBeenCalledWith('Lines[B932|东].Direction');
+    expect(onJump).toHaveBeenCalledWith('Lines[B932].Direction');
   });
 
   it('copy button puts the diff text on the clipboard', () => {

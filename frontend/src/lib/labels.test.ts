@@ -4,8 +4,19 @@ import {
   fieldDef,
   formatValue,
   arrayItemLabel,
+  arrayKeyFn,
   isKnownField,
 } from './labels';
+
+describe('arrayKeyFn', () => {
+  it('keys Lines by LineName only — Direction changes must not break matching', () => {
+    const keyFn = arrayKeyFn('Lines')!;
+    expect(keyFn({ LineName: 'M208', Direction: '旧终点站' })).toBe('M208');
+    expect(keyFn({ LineName: 'M208', Direction: '新终点站' })).toBe('M208');
+    expect(keyFn({ LineName: 'M208' })).toBe('M208');
+    expect(keyFn({ Direction: '无名线路' })).toBeNull();
+  });
+});
 
 describe('fieldLabel', () => {
   it('returns Chinese label for top-level fields', () => {

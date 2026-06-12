@@ -1,4 +1,4 @@
-// frontend/src/lib/treeModel.test.ts
+﻿// frontend/src/lib/treeModel.test.ts
 import { describe, it, expect } from 'vitest';
 import { buildTree, buildMirrorRows, hasDiffDeep } from './treeModel';
 import type { DiffNode, JsonValue } from './types';
@@ -161,16 +161,16 @@ describe('buildMirrorRows', () => {
           path: 'Lines', status: 'modified', left_value: null, right_value: null, summary: '',
           children: [
             {
-              path: 'Lines[718|宝安壹方中心]', status: 'modified', left_value: null, right_value: null, summary: '',
+              path: 'Lines[718]', status: 'modified', left_value: null, right_value: null, summary: '',
               children: [
                 {
-                  path: 'Lines[718|宝安壹方中心].RouteStops', status: 'modified', left_value: null, right_value: null, summary: '',
+                  path: 'Lines[718].RouteStops', status: 'modified', left_value: null, right_value: null, summary: '',
                   children: [
                     {
-                      path: 'Lines[718|宝安壹方中心].RouteStops[西乡恒生医院]', status: 'modified', left_value: null, right_value: null, summary: '',
+                      path: 'Lines[718].RouteStops[西乡恒生医院]', status: 'modified', left_value: null, right_value: null, summary: '',
                       children: [
                         {
-                          path: 'Lines[718|宝安壹方中心].RouteStops[西乡恒生医院].BuildingType',
+                          path: 'Lines[718].RouteStops[西乡恒生医院].BuildingType',
                           status: 'modified', left_value: '"Hospital"', right_value: '"医院"', summary: '', children: [],
                         },
                       ],
@@ -210,7 +210,7 @@ describe('buildMirrorRows', () => {
 
     const buildingTypeLeaf = findByPath(
       rows,
-      'Lines[718|宝安壹方中心].RouteStops[西乡恒生医院].BuildingType',
+      'Lines[718].RouteStops[西乡恒生医院].BuildingType',
     );
     expect(buildingTypeLeaf).toBeDefined();
     expect(buildingTypeLeaf.status).toBe('modified');
@@ -246,7 +246,7 @@ describe('buildMirrorRows', () => {
       }
       return undefined;
     }
-    const routeStops = findByPath(rows, 'Lines[718|X].RouteStops');
+    const routeStops = findByPath(rows, 'Lines[718].RouteStops');
     expect(routeStops).toBeDefined();
     const orderedNames = routeStops.children.map((c: any) => c.path.split('[').pop()?.replace(']', ''));
     expect(orderedNames).toEqual(['A', 'B', 'C']);

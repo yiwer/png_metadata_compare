@@ -1,4 +1,4 @@
-// frontend/src/components/UnifiedTree.test.tsx
+﻿// frontend/src/components/UnifiedTree.test.tsx
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { UnifiedTree } from './UnifiedTree';
@@ -96,7 +96,7 @@ describe('UnifiedTree', () => {
     const r = { Lines: [{ LineName: 'B932', Direction: '东', NextStop: 'B' }] };
     const d: DiffNode = {
       path: '', status: 'modified', left_value: null, right_value: null, summary: '', children: [
-        { path: 'Lines[B932|东].NextStop', status: 'modified', left_value: 'A', right_value: 'B', summary: '', children: [] },
+        { path: 'Lines[B932].NextStop', status: 'modified', left_value: 'A', right_value: 'B', summary: '', children: [] },
       ],
     };
     render(<UnifiedTree rows={rowsFor(l, r, d)} solo={null} highlight onlyDiff

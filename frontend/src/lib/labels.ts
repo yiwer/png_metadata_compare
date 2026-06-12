@@ -164,12 +164,11 @@ export type ArrayKeyFn = (item: unknown) => string | null;
 export function arrayKeyFn(arrayPath: string): ArrayKeyFn | null {
   switch (normalizePath(arrayPath)) {
     case 'Lines':
+      // 只按线路名匹配（与后端一致）：开往方向是会被改动的属性（如终点站更名），
+      // 进键会让同名线路各自落单成 仅左/仅右；同名重复项走消费式 #N 配对。
       return (item) => {
         const o = (item ?? {}) as Record<string, unknown>;
-        const ln = typeof o.LineName === 'string' ? o.LineName : null;
-        if (ln === null) return null;
-        const dir = typeof o.Direction === 'string' ? o.Direction : '';
-        return dir ? `${ln}|${dir}` : ln;
+        return typeof o.LineName === 'string' ? o.LineName : null;
       };
     case 'GroupItems':
       return (item) => {

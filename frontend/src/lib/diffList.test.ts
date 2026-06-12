@@ -1,4 +1,4 @@
-// frontend/src/lib/diffList.test.ts
+﻿// frontend/src/lib/diffList.test.ts
 import { describe, it, expect } from 'vitest';
 import { buildDiffEntries, buildDiffText } from './diffList';
 import { buildMirrorRows } from './treeModel';
@@ -14,9 +14,9 @@ describe('buildDiffEntries', () => {
     const left = { StopName: 'A', Lines: [{ LineName: 'B932', Direction: '东', NextStop: '尚都花园' }] };
     const right = { StopName: 'A', Lines: [{ LineName: 'B932', Direction: '东' }] };
     const rows = buildMirrorRows(left, right, diff([
-      node('Lines[B932|东]', 'modified'),    // 容器变化不计入条目
-      node('Lines[B932|东].Direction', 'modified'),
-      node('Lines[B932|东].NextStop', 'removed'),
+      node('Lines[B932]', 'modified'),    // 容器变化不计入条目
+      node('Lines[B932].Direction', 'modified'),
+      node('Lines[B932].NextStop', 'removed'),
     ]));
     const entries = buildDiffEntries(rows);
     expect(entries).toHaveLength(2);
@@ -29,7 +29,7 @@ describe('buildDiffEntries', () => {
   it('counts an array item that exists on one side as a single unit', () => {
     const left = { Lines: [] as JsonValue[] };
     const right = { Lines: [{ LineName: 'M197', Direction: '北' }] };
-    const rows = buildMirrorRows(left, right, diff([node('Lines[M197|北]', 'added')]));
+    const rows = buildMirrorRows(left, right, diff([node('Lines[M197]', 'added')]));
     const entries = buildDiffEntries(rows);
     expect(entries).toHaveLength(1);
     expect(entries[0].status).toBe('added');
@@ -55,7 +55,7 @@ describe('buildDiffText', () => {
   it('whole-item add/remove copies without literal null', () => {
     const left = { Lines: [] as JsonValue[] };
     const right = { Lines: [{ LineName: 'M197', Direction: '北' }] };
-    const rows = buildMirrorRows(left, right, diff([node('Lines[M197|北]', 'added')]));
+    const rows = buildMirrorRows(left, right, diff([node('Lines[M197]', 'added')]));
     const text = buildDiffText(buildDiffEntries(rows));
     expect(text).not.toContain('null');
     expect(text).toContain('（仅右侧整项）');

@@ -1,4 +1,4 @@
-use crate::config::{CompareConfig, config};
+﻿use crate::config::{CompareConfig, config};
 use crate::error::CompareError;
 use crate::metadata::MetadataLoadResult;
 use serde::Serialize;
@@ -153,8 +153,8 @@ fn compare_values(
                 {
                     DiffStatus::Unchanged
                 }
-                (None, Some(rv)) if is_blank_scalar(rv) => DiffStatus::Unchanged,
-                (Some(lv), None) if is_blank_scalar(lv) => DiffStatus::Unchanged,
+                (None, Some(rv)) if is_blank_value(rv) => DiffStatus::Unchanged,
+                (Some(lv), None) if is_blank_value(lv) => DiffStatus::Unchanged,
                 (None, Some(_)) => DiffStatus::Added,
                 (Some(_), None) => DiffStatus::Removed,
                 (Some(_), Some(_)) => DiffStatus::Modified,
@@ -278,18 +278,9 @@ fn build_key_index<'a>(
 fn business_key_for_path(path: &str) -> Option<BusinessKeyFn> {
     match terminal_path_segment(path) {
         "GroupItems" => Some(|value| value.get("SequenceNo")?.as_str().map(str::to_owned)),
-        "Lines" => Some(|value| {
-            let line_name = value.get("LineName")?.as_str()?;
-            let direction = value
-                .get("Direction")
-                .and_then(|direction| direction.as_str());
-            match direction {
-                Some(direction) if !direction.is_empty() => {
-                    Some(format!("{line_name}|{direction}"))
-                }
-                _ => Some(line_name.to_owned()),
-            }
-        }),
+        // 只按线路名匹配：开往方向是会被改动的属性（如终点站更名），
+        // 进键会让同名线路各自落单成 仅左/仅右；同名重复项走消费式 #N 配对。
+        "Lines" => Some(|value| value.get("LineName")?.as_str().map(str::to_owned)),
         "RouteStops" => Some(|value| {
             value
                 .get("Name")
@@ -361,20 +352,23 @@ fn is_ignored_field(cfg: &CompareConfig, path: &str) -> bool {
     cfg.is_ignored(&normalize_path_for_schema(path))
 }
 
-fn is_blank_scalar(value: &Value) -> bool {
+fn is_blank_value(value: &Value) -> bool {
     match value {
         Value::Null => true,
         Value::String(s) => s.is_empty(),
+        // 渲染端对"无内容"的数组字段时而写 null 时而写 []（如 GroupItems）——
+        // 两种写法业务上都是"没有条目"，视为空白等价。
+        Value::Array(items) => items.is_empty(),
         _ => false,
     }
 }
 
 /// Equivalence with optional per-path canonicalisation from `compare-config.json`.
 /// String values matching an entry in the equivalence map are folded to their canonical
-/// form before comparison; other types fall back to literal equality + blank-scalar
-/// equivalence.
+/// form before comparison; other types fall back to literal equality + blank-value
+/// equivalence (null / "" / [] are interchangeable).
 fn scalars_are_equivalent_at(cfg: &CompareConfig, path: &str, left: &Value, right: &Value) -> bool {
-    if is_blank_scalar(left) && is_blank_scalar(right) {
+    if is_blank_value(left) && is_blank_value(right) {
         return true;
     }
     if let (Value::String(ls), Value::String(rs)) = (left, right) {
@@ -696,6 +690,47 @@ mod tests {
     }
 
     #[test]
+    fn treats_null_and_empty_array_as_equivalent() {
+        let left = MetadataLoadResult::Parsed(json!({"GroupItems": null}));
+        let right = MetadataLoadResult::Parsed(json!({"GroupItems": []}));
+
+        let diff = compare_with_defaults(&left, &right);
+        assert_eq!(
+            diff.status,
+            DiffStatus::Unchanged,
+            "null vs [] 应视为等价: {diff:#?}"
+        );
+
+        let reversed = compare_with_defaults(&right, &left);
+        assert_eq!(
+            reversed.status,
+            DiffStatus::Unchanged,
+            "[] vs null 应视为等价: {reversed:#?}"
+        );
+    }
+
+    #[test]
+    fn keeps_null_vs_non_empty_array_as_difference() {
+        let left = MetadataLoadResult::Parsed(json!({"GroupItems": null}));
+        let right = MetadataLoadResult::Parsed(json!({
+            "GroupItems": [{"SequenceNo": "①", "LineNames": "M102", "IsCurrent": true}]
+        }));
+
+        let diff = compare_with_defaults(&left, &right);
+        let child = diff
+            .children
+            .iter()
+            .find(|node| node.path == "GroupItems")
+            .unwrap_or_else(|| panic!("missing diff child for GroupItems: {diff:#?}"));
+
+        assert_ne!(
+            child.status,
+            DiffStatus::Unchanged,
+            "null vs 非空数组仍应是差异: {child:#?}"
+        );
+    }
+
+    #[test]
     fn keeps_added_array_items_explorable_when_array_field_was_absent_on_one_side() {
         let left = MetadataLoadResult::Parsed(json!({}));
         let right = MetadataLoadResult::Parsed(json!({
@@ -844,7 +879,7 @@ mod tests {
     }
 
     #[test]
-    fn matches_lines_by_line_name_and_direction_regardless_of_position() {
+    fn matches_lines_by_line_name_regardless_of_position() {
         let left = MetadataLoadResult::Parsed(json!({
             "Lines": [
                 {"LineName": "B932", "Direction": "Terminal", "PriceDescription": "1"},
@@ -867,13 +902,13 @@ mod tests {
 
         assert!(
             lines.children.iter().any(|node| {
-                node.path == "Lines[B932|Terminal]" && node.status == DiffStatus::Unchanged
+                node.path == "Lines[B932]" && node.status == DiffStatus::Unchanged
             }),
             "B932 should match by key and be Unchanged: {lines:#?}"
         );
         assert!(
             lines.children.iter().any(|node| {
-                node.path == "Lines[M375|Downtown]" && node.status == DiffStatus::Modified
+                node.path == "Lines[M375]" && node.status == DiffStatus::Modified
             }),
             "M375 should match by key and be Modified (PriceDescription differs): {lines:#?}"
         );
@@ -883,6 +918,50 @@ mod tests {
                 .iter()
                 .all(|node| node.status != DiffStatus::Reordered),
             "no reorder node should be emitted (algorithm no longer surfaces position changes for Lines): {lines:#?}"
+        );
+    }
+
+    #[test]
+    fn matches_lines_by_line_name_when_direction_differs() {
+        let left = MetadataLoadResult::Parsed(json!({
+            "Lines": [{"LineName": "M208", "Direction": "旧终点站", "PriceDescription": "2"}]
+        }));
+        let right = MetadataLoadResult::Parsed(json!({
+            "Lines": [{"LineName": "M208", "Direction": "新终点站", "PriceDescription": "2"}]
+        }));
+
+        let diff = compare_with_defaults(&left, &right);
+        let lines = diff
+            .children
+            .iter()
+            .find(|node| node.path == "Lines")
+            .unwrap_or_else(|| panic!("missing diff child for Lines: {diff:#?}"));
+
+        let item = lines
+            .children
+            .iter()
+            .find(|node| node.path == "Lines[M208]")
+            .unwrap_or_else(|| {
+                panic!("两侧 M208 应按线路名匹配为同一项 Lines[M208]: {lines:#?}")
+            });
+        assert_eq!(item.status, DiffStatus::Modified);
+
+        let direction = item
+            .children
+            .iter()
+            .find(|node| node.path == "Lines[M208].Direction")
+            .unwrap_or_else(|| panic!("missing Direction child: {item:#?}"));
+        assert_eq!(
+            direction.status,
+            DiffStatus::Modified,
+            "方向变化应表现为字段差异而非整项增删: {direction:#?}"
+        );
+
+        assert!(
+            lines.children.iter().all(|node| {
+                node.status != DiffStatus::Added && node.status != DiffStatus::Removed
+            }),
+            "不应再出现 仅左/仅右 整项: {lines:#?}"
         );
     }
 
@@ -926,7 +1005,7 @@ mod tests {
             historical_lines
                 .children
                 .iter()
-                .all(|node| !node.path.contains("HistoricalLines[M375|Downtown]")),
+                .all(|node| !node.path.contains("HistoricalLines[M375]")),
             "unexpected business-key path in HistoricalLines: {historical_lines:#?}"
         );
     }
@@ -986,7 +1065,7 @@ mod tests {
 
         assert!(
             changes.iter().any(|n| {
-                n.path == "Lines[B932|Terminal].RouteStops[NewStop]"
+                n.path == "Lines[B932].RouteStops[NewStop]"
                     && n.status == DiffStatus::Added
             }),
             "NewStop should be Added: {changes:#?}"
@@ -1000,9 +1079,9 @@ mod tests {
         assert!(
             changes
                 .iter()
-                .all(|n| n.path != "Lines[B932|Terminal].RouteStops[Alpha]"
-                    && n.path != "Lines[B932|Terminal].RouteStops[Beta]"
-                    && n.path != "Lines[B932|Terminal].RouteStops[Gamma]"),
+                .all(|n| n.path != "Lines[B932].RouteStops[Alpha]"
+                    && n.path != "Lines[B932].RouteStops[Beta]"
+                    && n.path != "Lines[B932].RouteStops[Gamma]"),
             "Alpha/Beta/Gamma differ only by Sequence — none should appear in the change list: {changes:#?}"
         );
     }
@@ -1117,7 +1196,7 @@ mod tests {
         );
         assert!(
             lines.children.iter().any(|node| {
-                node.path.contains("Lines[M375|Downtown]") && node.status == DiffStatus::Modified
+                node.path.contains("Lines[M375]") && node.status == DiffStatus::Modified
             }),
             "expected valid keyed line to still compare by key: {lines:#?}"
         );
@@ -1153,7 +1232,7 @@ mod tests {
         assert!(
             changes
                 .iter()
-                .any(|node| node.path == "Lines[M375|Downtown].PriceDescription"),
+                .any(|node| node.path == "Lines[M375].PriceDescription"),
             "expected leaf change in flattened list: {changes:#?}"
         );
     }
@@ -1178,7 +1257,7 @@ mod tests {
         let diff = compare_with_defaults(&left, &right);
         let route_stop = locate(
             &diff,
-            "Lines[B932|Terminal].RouteStops[Origin]",
+            "Lines[B932].RouteStops[Origin]",
         );
 
         let building_type = route_stop
@@ -1214,7 +1293,7 @@ mod tests {
         let diff = compare_with_defaults(&left, &right);
         let route_stop = locate(
             &diff,
-            "Lines[B932|Terminal].RouteStops[Origin]",
+            "Lines[B932].RouteStops[Origin]",
         );
 
         let building_type = route_stop
@@ -1250,7 +1329,7 @@ mod tests {
         let diff = compare_with_defaults(&left, &right);
         let route_stop = locate(
             &diff,
-            "Lines[B932|Terminal].RouteStops[Origin]",
+            "Lines[B932].RouteStops[Origin]",
         );
 
         let building_type = route_stop
@@ -1357,7 +1436,7 @@ mod tests {
         let changes = flatten_changes(&diff);
         assert!(
             changes.iter().any(|n| {
-                n.path == "Lines[B932|Terminal].RouteStops[X].BuildingType"
+                n.path == "Lines[B932].RouteStops[X].BuildingType"
                     && n.status == DiffStatus::Modified
             }),
             "unmapped alias must still surface as Modified: {changes:#?}"
