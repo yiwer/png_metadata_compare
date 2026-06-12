@@ -16,6 +16,7 @@ export type AppView = 'welcome' | 'solo' | 'mirror' | 'directory-overview';
 export type ViewMode = 'tree' | 'json' | 'image';
 export type ActiveFilter = 'all' | BatchListItemKind;
 export type Side = 'left' | 'right';
+export type SortKey = 'diff-desc' | 'name-asc';
 
 export interface DirectoryContext {
   index: number;
@@ -34,6 +35,20 @@ function formatError(error: unknown): string {
 
 function isPngPath(p: string): boolean {
   return /\.png$/i.test(p);
+}
+
+const KIND_RANK: Record<BatchListItemKind, number> = {
+  different: 0, left_only: 1, right_only: 2, error: 3, identical: 4,
+};
+
+export function sortItems(items: BatchListItem[], key: SortKey): BatchListItem[] {
+  const byName = (a: BatchListItem, b: BatchListItem) => a.label.localeCompare(b.label, 'zh');
+  const sorted = [...items];
+  if (key === 'name-asc') return sorted.sort(byName);
+  return sorted.sort((a, b) =>
+    KIND_RANK[a.kind] - KIND_RANK[b.kind]
+    || b.difference_count - a.difference_count
+    || byName(a, b));
 }
 
 export function useWorkbench(api: WorkbenchApi = workbenchApi) {
@@ -61,6 +76,14 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  // New state for sidebar selection & search
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('diff-desc');
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [errorItem, setErrorItem] = useState<BatchListItem | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
+
   // Directory scans are long-running; this guards against a superseded scan
   // overwriting the progress/results of a newer one.
   const scanSeqRef = useRef(0);
@@ -86,6 +109,9 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     setError(null);
     setSlotBarCollapsed(false);
     setInDirectorySubview(false);
+    setSearchQuery('');
+    setSelectedItemId(null);
+    setErrorItem(null);
   }
 
   function setLeftInput(value: string) {
@@ -131,6 +157,8 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   function toggleDiffHighlight() { setDiffHighlight((v) => !v); }
   function toggleOnlyDiff() { setOnlyDiff((v) => !v); }
   function toggleSlotBarCollapsed() { setSlotBarCollapsed((v) => !v); }
+  function toggleSidebarCollapsed() { setSidebarCollapsed((v) => !v); }
+  function toggleRailCollapsed() { setRailCollapsed((v) => !v); }
 
   function goBackToDirectory() {
     setView('directory-overview');
@@ -141,7 +169,9 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     setInDirectorySubview(false);
   }
 
-  async function navigateToPair(item: BatchListItem) {
+  async function selectItem(item: BatchListItem) {
+    setSelectedItemId(item.id);
+    setErrorItem(null);
     setIsLoading(true);
     setError(null);
 
@@ -153,7 +183,13 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
 
     try {
       setInDirectorySubview(true);
-      if (item.kind === 'left_only' && item.left_path) {
+      if (item.kind === 'error') {
+        setErrorItem(item);
+        setPairResult(null);
+        setSoloResult(null);
+        setSoloSide(null);
+        setView('directory-overview'); // Task 7 will change to 'error'
+      } else if (item.kind === 'left_only' && item.left_path) {
         const result = await api.inspectSingle(item.left_path, 'left');
         setSoloResult(result);
         setSoloSide('left');
@@ -178,6 +214,26 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  // Backwards-compatible alias used by older tests.
+  const navigateToPair = selectItem;
+
+  async function selectByOffset(delta: number) {
+    if (filteredItems.length === 0) return;
+    const cur = filteredItems.findIndex((i) => i.id === selectedItemId);
+    const next = cur < 0 ? 0 : Math.min(filteredItems.length - 1, Math.max(0, cur + delta));
+    if (next === cur) return;
+    await selectItem(filteredItems[next]);
+  }
+
+  async function selectNext() { await selectByOffset(1); }
+  async function selectPrev() { await selectByOffset(-1); }
+
+  // Task 8 之前后端还没有 cancel_scan 命令，这里先落桩：
+  // api.cancelScan 是可选成员，缺省时本函数是 no-op。
+  async function cancelScan() {
+    try { await api.cancelScan?.(); } catch { /* 后端未实现/未启动时静默 */ }
   }
 
   async function runAuto() {
@@ -225,9 +281,17 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
         setPairResult(null);
         setSoloResult(null); setSoloSide(null);
         setDirectoryContext(null);
-        setActiveFilter('different');
         setView('directory-overview');
         setSlotBarCollapsed(true);
+        const defaultFilter: ActiveFilter = summary.counts.different > 0 ? 'different' : 'all';
+        setActiveFilter(defaultFilter);
+        setSearchQuery('');
+        setSelectedItemId(null);
+        const visible = sortItems(
+          summary.items.filter((i) => defaultFilter === 'all' || i.kind === defaultFilter),
+          sortKey,
+        );
+        if (visible[0]) void selectItem(visible[0]);
       } else {
         setView('welcome');
         setSlotBarCollapsed(false);
@@ -245,10 +309,13 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   // Backwards-compatible alias used by older tests.
   const runCompare = runAuto;
 
-  const filteredItems =
-    activeFilter === 'all'
-      ? (directorySummary?.items ?? [])
-      : (directorySummary?.items ?? []).filter((i) => i.kind === activeFilter);
+  const query = searchQuery.trim().toLowerCase();
+  const filteredItems = sortItems(
+    (directorySummary?.items ?? [])
+      .filter((i) => activeFilter === 'all' || i.kind === activeFilter)
+      .filter((i) => !query || i.label.toLowerCase().includes(query)),
+    sortKey,
+  );
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -279,7 +346,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
         const items = (directorySummary?.items ?? []).filter((i) => i.kind === 'different');
         const cur = directoryContext.index - 1;
         const next = e.key === ']' ? Math.min(cur + 1, items.length - 1) : Math.max(cur - 1, 0);
-        if (items[next]) void navigateToPair(items[next]);
+        if (items[next]) void selectItem(items[next]);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -307,6 +374,23 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     scanProgress,
     error,
     toast,
+    // new
+    searchQuery,
+    setSearchQuery,
+    sortKey,
+    setSortKey,
+    selectedItemId,
+    selectItem,
+    selectNext,
+    selectPrev,
+    errorItem,
+    sidebarCollapsed,
+    railCollapsed,
+    toggleSidebarCollapsed,
+    toggleRailCollapsed,
+    setRailCollapsed,
+    cancelScan,
+    // setters
     setMode,
     setLeftInput,
     setRightInput,

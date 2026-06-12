@@ -9,6 +9,7 @@ export interface WorkbenchApi {
     onProgress?: (progress: ScanProgress) => void,
   ): Promise<DirectorySummary>;
   inspectSingle(path: string, side: Side): Promise<SideInspection>;
+  cancelScan?(): Promise<void>;
 }
 
 export const workbenchApi: WorkbenchApi = {

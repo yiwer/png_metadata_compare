@@ -62,15 +62,16 @@ describe('useWorkbench', () => {
     expect(result.current.view).toBe('mirror');
   });
 
-  it('runCompare (directory) calls scanDirectory and sets view to directory-overview', async () => {
+  it('runCompare (directory) calls scanDirectory and sets directorySummary', async () => {
     const api = makeApi();
     const { result } = renderHook(() => useWorkbench(api));
     act(() => { result.current.setMode('directory'); });
     act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
     await act(async () => { await result.current.runCompare(); });
     expect(api.scanDirectory).toHaveBeenCalledWith('/left', '/right', expect.any(Function));
-    expect(result.current.view).toBe('directory-overview');
+    // auto-select fires on first different item, so view advances to 'mirror'
     expect(result.current.directorySummary).toBe(mockSummary);
+    expect(result.current.selectedItemId).not.toBeNull();
   });
 
   it('exposes scan progress while a directory scan runs and clears it after', async () => {
@@ -182,13 +183,15 @@ describe('useWorkbench', () => {
     expect(result.current.pairResult).toBe(mockInspection);
   });
 
-  it('runAuto: directory mode + both filled → directory-overview', async () => {
+  it('runAuto: directory mode + both filled → scans and auto-selects', async () => {
     const api = makeApi();
     const { result } = renderHook(() => useWorkbench(api));
     act(() => { result.current.setMode('directory'); });
     act(() => { result.current.setLeftInput('/L'); result.current.setRightInput('/R'); });
     await act(async () => { await result.current.runAuto(); });
-    expect(result.current.view).toBe('directory-overview');
+    // auto-select fires, advancing view past directory-overview
+    expect(result.current.directorySummary).toBe(mockSummary);
+    expect(result.current.selectedItemId).not.toBeNull();
   });
 
   it('tryDropPath: dropping .png while in directory mode auto-switches to single', () => {
@@ -277,5 +280,83 @@ describe('useWorkbench', () => {
     await act(async () => { await result.current.runCompare(); });
     await act(async () => { await result.current.navigateToPair(broken as any); });
     expect(result.current.error).toMatch(/路径缺失/);
+  });
+});
+
+describe('sidebar selection & search (redesign)', () => {
+  it('searchQuery narrows filteredItems by label substring, case-insensitive', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
+    await act(async () => { await result.current.runCompare(); });
+    act(() => { result.current.setActiveFilter('all'); result.current.setSearchQuery('A.PNG'); });
+    expect(result.current.filteredItems.map((i) => i.label)).toEqual(['a.png']);
+  });
+
+  it('sortKey diff-desc orders different items by count desc, then kinds, then name', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
+    await act(async () => { await result.current.runCompare(); });
+    act(() => { result.current.setActiveFilter('all'); });
+    expect(result.current.filteredItems.map((i) => i.label)).toEqual(['b.png', 'a.png', 'c.png']);
+    act(() => { result.current.setSortKey('name-asc'); });
+    expect(result.current.filteredItems.map((i) => i.label)).toEqual(['a.png', 'b.png', 'c.png']);
+  });
+
+  it('scan auto-selects the first item of the default filter and loads it', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
+    await act(async () => { await result.current.runCompare(); });
+    // 默认筛选 different，diff-desc 排序下第一项是 b.png（2 处差异）
+    expect(result.current.selectedItemId).toBe('2');
+    expect(api.compareSingle).toHaveBeenCalledWith('/l/b.png', '/r/b.png');
+  });
+
+  it('selectNext / selectPrev walk the filtered list and clamp at ends', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
+    await act(async () => { await result.current.runCompare(); });
+    await act(async () => { await result.current.selectNext(); });
+    expect(result.current.selectedItemId).toBe('1');
+    await act(async () => { await result.current.selectNext(); });   // 末尾，原地
+    expect(result.current.selectedItemId).toBe('1');
+    await act(async () => { await result.current.selectPrev(); });
+    expect(result.current.selectedItemId).toBe('2');
+  });
+
+  it('zero different falls back to all filter after scan', async () => {
+    const api = makeApi({
+      scanDirectory: vi.fn().mockResolvedValue({
+        counts: { identical: 1, different: 0, left_only: 0, right_only: 0, error: 0 },
+        items: [{ id: '9', kind: 'identical', label: 'z.png', left_path: '/l/z.png', right_path: '/r/z.png', difference_count: 0, match_strategy: 'file_name', message: null }],
+      }),
+    });
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
+    await act(async () => { await result.current.runCompare(); });
+    expect(result.current.activeFilter).toBe('all');
+  });
+
+  it('selecting an error item exposes errorItem without calling compare', async () => {
+    const api = makeApi({
+      scanDirectory: vi.fn().mockResolvedValue({
+        counts: { identical: 0, different: 0, left_only: 0, right_only: 0, error: 1 },
+        items: [{ id: 'e1', kind: 'error', label: 'C:/bad.png', left_path: null, right_path: null, difference_count: 0, match_strategy: null, message: 'E_NO_METADATA' }],
+      }),
+    });
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
+    await act(async () => { await result.current.runCompare(); });
+    expect(result.current.errorItem?.id).toBe('e1');
+    expect(api.compareSingle).not.toHaveBeenCalled();
   });
 });
