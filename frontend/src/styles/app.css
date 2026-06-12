@@ -110,7 +110,7 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
   text-transform: uppercase;
   color: var(--group-head);
   padding: 6px 10px;
-  background: var(--group-bg);
+  background: var(--bg-page);   /* 吸顶时挡住滚动内容；原 --group-bg 即 transparent */
   border-left: 2px solid var(--group-head);
   border-radius: 2px;
   margin: var(--sp-3) 0 var(--sp-1);
@@ -118,6 +118,11 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-2);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  min-height: 28px;
+  box-sizing: border-box;
 }
 .group-head[data-level="1"] {
   font-size: 10px;
@@ -125,6 +130,9 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
   color: var(--group-head-nested);
   border-left-color: var(--group-rule-nested);
   margin: var(--sp-2) 0 2px;
+  top: 28px;
+  z-index: 4;
+  min-height: 24px;
 }
 .group-head[data-level="2"],
 .group-head[data-level="3"] {
@@ -134,15 +142,19 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
   color: var(--text-tertiary);
   border-left-color: transparent;
   margin: var(--sp-2) 0 2px;
+  top: 52px;
+  z-index: 3;
+  min-height: 22px;
 }
+.group-head[data-level="3"] { position: static; }
 .group-head__count { color: var(--text-tertiary); font-size: 10px; letter-spacing: 0; text-transform: none; }
 .group-head__toggle { color: var(--text-tertiary); margin-right: var(--sp-1); }
 
 /* Status-colored headers */
-.group-head--add[data-level] { background: var(--add-bg); border-left-color: var(--add-text); color: var(--add-text); }
-.group-head--rem[data-level] { background: var(--rem-bg); border-left-color: var(--rem-text); color: var(--rem-text); }
-.group-head--mod[data-level] { background: var(--mod-bg); border-left-color: var(--mod-new); color: var(--mod-new); }
-.group-head--err[data-level] { background: rgba(255, 124, 224, 0.10); border-left-color: var(--err-text); color: var(--err-text); }
+.group-head--add[data-level] { background: linear-gradient(var(--add-bg), var(--add-bg)) var(--bg-page); border-left-color: var(--add-text); color: var(--add-text); }
+.group-head--rem[data-level] { background: linear-gradient(var(--rem-bg), var(--rem-bg)) var(--bg-page); border-left-color: var(--rem-text); color: var(--rem-text); }
+.group-head--mod[data-level] { background: linear-gradient(var(--mod-bg), var(--mod-bg)) var(--bg-page); border-left-color: var(--mod-new); color: var(--mod-new); }
+.group-head--err[data-level] { background: linear-gradient(rgba(255, 124, 224, 0.10), rgba(255, 124, 224, 0.10)) var(--bg-page); border-left-color: var(--err-text); color: var(--err-text); }
 
 /* Used by RawJsonSplit and ImageSplit__panes */
 .mirror-grid {
