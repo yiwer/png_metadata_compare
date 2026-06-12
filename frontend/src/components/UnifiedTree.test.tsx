@@ -72,4 +72,35 @@ describe('UnifiedTree', () => {
     fireEvent.click(btns[0]);
     expect(writeText).toHaveBeenCalled();
   });
+
+  it('focusRequest expands collapsed ancestors and scrolls to the row', () => {
+    const nested = { Lines: [{ LineName: 'B932', Direction: '东' }] };
+    const rows = rowsFor(nested, nested, null);
+    const spy = vi.spyOn(Element.prototype, 'scrollIntoView');
+    const { rerender } = render(
+      <UnifiedTree rows={rows} solo={null} highlight onlyDiff={false}
+        leftLabel="a" rightLabel="b" focusRequest={null} />);
+    expect(screen.queryByText('B932')).toBeNull(); // Lines 默认折叠
+    const path = rows[0].children!.find((r) => r.path === 'Lines')!.children![0]
+      .children!.find((r) => r.label === '线路名称')!.path;
+    rerender(
+      <UnifiedTree rows={rows} solo={null} highlight onlyDiff={false}
+        leftLabel="a" rightLabel="b" focusRequest={{ path, seq: 1 }} />);
+    expect(screen.queryAllByText('B932').length).toBeGreaterThan(0); // 祖先被展开
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('onlyDiff auto-expands collapsed array groups that contain diffs', () => {
+    const l = { Lines: [{ LineName: 'B932', Direction: '东', NextStop: 'A' }] };
+    const r = { Lines: [{ LineName: 'B932', Direction: '东', NextStop: 'B' }] };
+    const d: DiffNode = {
+      path: '', status: 'modified', left_value: null, right_value: null, summary: '', children: [
+        { path: 'Lines[B932|东].NextStop', status: 'modified', left_value: 'A', right_value: 'B', summary: '', children: [] },
+      ],
+    };
+    render(<UnifiedTree rows={rowsFor(l, r, d)} solo={null} highlight onlyDiff
+      leftLabel="a" rightLabel="b" focusRequest={null} />);
+    expect(screen.getByText('A')).toBeInTheDocument(); // 折叠数组被自动展开且差异行可见
+  });
 });

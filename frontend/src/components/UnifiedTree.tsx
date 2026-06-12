@@ -1,5 +1,5 @@
 // frontend/src/components/UnifiedTree.tsx
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { GroupHead } from './GroupHead';
 import { hasDiffDeep } from '../lib/treeModel';
 import type { MirrorRow } from '../lib/treeModel';
@@ -29,29 +29,36 @@ export function UnifiedTree({
   rightLabel: string;
   focusRequest: FocusRequest | null;
 }) {
+  // solo 数据没有 diff，可达的 onlyDiff 全局开关在此中和，否则整树为空
+  const effOnlyDiff = solo ? false : onlyDiff;
+
   const [closed, setClosed] = useState<Set<string>>(() => collectDefaultClosed(rows));
   const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setClosed(collectDefaultClosed(rows)); }, [rows]);
 
-  // 跳转：展开祖先 → 滚动 → 闪烁
+  const handledSeqRef = useRef(0);
+
+  // 展开祖先（一次提交）
   useEffect(() => {
     if (!focusRequest) return;
     setClosed((cur) => openAncestors(rows, focusRequest.path, cur));
-    // 等一帧让展开后的行进入 DOM
-    const t = requestAnimationFrame(() => {
-      const el = bodyRef.current?.querySelector<HTMLElement>(
-        `[data-path="${CSS.escape(focusRequest.path)}"]`,
-      );
-      if (!el) return;
-      el.scrollIntoView({ block: 'center' });
-      el.classList.remove('utree__row--flash');
-      void el.offsetWidth; // 重启 CSS 动画
-      el.classList.add('utree__row--flash');
-    });
-    return () => cancelAnimationFrame(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequest]);
+
+  // 每次提交后尝试定位：祖先展开的那次提交必然命中（提交驱动，无 rAF 竞态）
+  useEffect(() => {
+    if (!focusRequest || handledSeqRef.current === focusRequest.seq) return;
+    const el = bodyRef.current?.querySelector<HTMLElement>(
+      `[data-path="${CSS.escape(focusRequest.path)}"]`,
+    );
+    if (!el) return;
+    handledSeqRef.current = focusRequest.seq;
+    el.scrollIntoView({ block: 'center' });
+    el.classList.remove('utree__row--flash');
+    void el.offsetWidth; // 重启 CSS 动画
+    el.classList.add('utree__row--flash');
+  });
 
   const toggle = (path: string) =>
     setClosed((cur) => {
@@ -60,7 +67,10 @@ export function UnifiedTree({
       return next;
     });
 
-  const effectiveClosed = onlyDiff ? withDiffGroupsOpen(rows, closed) : closed;
+  const effectiveClosed = useMemo(
+    () => (effOnlyDiff ? withDiffGroupsOpen(rows, closed) : closed),
+    [effOnlyDiff, rows, closed],
+  );
 
   return (
     <div className="utree">
@@ -72,7 +82,7 @@ export function UnifiedTree({
       <div className="utree__body" ref={bodyRef}>
         {rows.map((row) => (
           <RowView key={row.path || 'root'} row={row} level={0} closed={effectiveClosed}
-            toggle={toggle} highlight={highlight} onlyDiff={onlyDiff} solo={solo} />
+            toggle={toggle} highlight={highlight} onlyDiff={effOnlyDiff} solo={solo} />
         ))}
       </div>
     </div>
@@ -88,7 +98,6 @@ function RowView({
   if (onlyDiff && !hasDiffDeep(row)) return null;
 
   if (row.kind === 'leaf') {
-    if (onlyDiff && row.status === 'unchanged') return null;
     // In solo mode, skip leaves whose solo-side raw value is absent (schema-padded placeholders).
     if (solo === 'left' && row.leftRaw === undefined) return null;
     if (solo === 'right' && row.rightRaw === undefined) return null;
