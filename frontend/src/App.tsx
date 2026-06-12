@@ -1,5 +1,5 @@
 // frontend/src/App.tsx
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -12,6 +12,7 @@ import { WelcomePane } from './components/WelcomePane';
 import { useWorkbench } from './features/workbench/useWorkbench';
 import { buildMirrorRows } from './lib/treeModel';
 import { buildDiffEntries } from './lib/diffList';
+import type { BatchListItem } from './lib/types';
 
 const win = getCurrentWindow();
 const RAIL_AUTO_COLLAPSE_WIDTH = 1000;
@@ -54,18 +55,16 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wb.leftInput, wb.rightInput, wb.mode]);
 
-  // 窗口过窄自动收起差异栏；手动操作后本会话内尊重手动状态
-  const [railManual, setRailManual] = useState(false);
+  // 窗口过窄自动收起差异栏；手动操作（按钮/快捷键）后本会话内尊重手动状态
   useEffect(() => {
     const onResize = () => {
-      if (railManual) return;
+      if (wb.railManualRef.current) return;
       wb.setRailCollapsed(window.innerWidth < RAIL_AUTO_COLLAPSE_WIDTH);
     };
     onResize();
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [railManual]);
+  }, [wb.railManualRef, wb.setRailCollapsed]);
 
   // ===== 行模型单处计算，树与差异栏共享（设计 §5） =====
   const pairRows = useMemo(
@@ -88,6 +87,8 @@ export default function App() {
 
   // ===== 差异跳转（n/p 与差异栏点击共用） =====
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
+  // 切换文件对后清掉焦点请求，避免 n/p 以上一对的路径为锚点“幽灵推进”
+  useEffect(() => { setFocusRequest(null); }, [wb.pairResult]);
   const jumpTo = (path: string) =>
     setFocusRequest((cur) => ({ path, seq: (cur?.seq ?? 0) + 1 }));
   useEffect(() => {
@@ -96,13 +97,21 @@ export default function App() {
       if (diffEntries.length === 0) return;
       setFocusRequest((cur) => {
         const curIdx = cur ? diffEntries.findIndex((d) => d.path === cur.path) : -1;
-        const next = (curIdx + dir + diffEntries.length) % diffEntries.length;
+        // 无锚点（首次跳转/换对后）：n 从第一处开始，p 从最后一处开始
+        const next = curIdx < 0
+          ? (dir === 1 ? 0 : diffEntries.length - 1)
+          : (curIdx + dir + diffEntries.length) % diffEntries.length;
         return { path: diffEntries[next].path, seq: (cur?.seq ?? 0) + 1 };
       });
     };
     document.addEventListener('wb:diffJump', onJump);
     return () => document.removeEventListener('wb:diffJump', onJump);
   }, [diffEntries]);
+
+  const handleSelect = useCallback(
+    (item: BatchListItem) => { void wb.selectItem(item); },
+    [wb.selectItem],
+  );
 
   const showSidebar = isDir && (wb.directorySummary !== null || wb.isLoading) && !wb.sidebarCollapsed;
   const showRail = wb.view === 'mirror' && wb.pairResult !== null;
@@ -145,7 +154,7 @@ export default function App() {
             activeFilter={wb.activeFilter} searchQuery={wb.searchQuery} sortKey={wb.sortKey}
             selectedItemId={wb.selectedItemId} isLoading={wb.isLoading} scanProgress={wb.scanProgress}
             onFilter={wb.setActiveFilter} onSearch={wb.setSearchQuery} onSort={wb.setSortKey}
-            onSelect={(item) => void wb.selectItem(item)}
+            onSelect={handleSelect}
             onPickLeft={() => void handlePickLeft()} onPickRight={() => void handlePickRight()}
             onApplyPair={(l, r) => { wb.setLeftInput(l); wb.setRightInput(r); }}
             onPastePath={(side, p) => wb.tryDropPath(side, p)}
@@ -161,22 +170,27 @@ export default function App() {
               onPickLeft={() => void handlePickLeft()} onPickRight={() => void handlePickRight()} />
           )}
 
-          {(wb.view === 'mirror' || wb.view === 'solo') && (
+          {((wb.view === 'mirror' && wb.pairResult !== null) || (wb.view === 'solo' && wb.soloResult !== null)) && (
             <DetailHeader wb={wb} diffCount={diffEntries.length} />
           )}
 
           {wb.view === 'solo' && wb.soloResult && (
-            soloRows
-              ? (wb.viewMode === 'image'
-                  ? <SingleImage path={wb.soloResult.file_path} name={wb.soloResult.file_name} />
-                  : wb.viewMode === 'json'
-                    ? <RawJsonSplit left={wb.soloSide === 'left' ? wb.soloResult.raw_json : null}
-                        right={wb.soloSide === 'right' ? wb.soloResult.raw_json : null} solo={wb.soloSide} />
-                    : <UnifiedTree rows={soloRows} solo={wb.soloSide} highlight={false} onlyDiff={false}
-                        leftLabel={wb.soloSide === 'left' ? wb.soloResult.file_name : ''}
-                        rightLabel={wb.soloSide === 'right' ? wb.soloResult.file_name : ''}
-                        focusRequest={null} />)
-              : <div className="banner banner--error">该文件不含嵌入式元数据。</div>
+            wb.viewMode === 'image' ? (
+              // 图片视图不依赖元数据：无元数据的 PNG 也能看图
+              <SingleImage path={wb.soloResult.file_path} name={wb.soloResult.file_name} />
+            ) : wb.viewMode === 'json' ? (
+              wb.soloResult.raw_json
+                ? <RawJsonSplit left={wb.soloSide === 'left' ? wb.soloResult.raw_json : null}
+                    right={wb.soloSide === 'right' ? wb.soloResult.raw_json : null} solo={wb.soloSide} />
+                : <div className="banner banner--error">该文件不含嵌入式元数据。</div>
+            ) : soloRows ? (
+              <UnifiedTree rows={soloRows} solo={wb.soloSide} highlight={false} onlyDiff={false}
+                leftLabel={wb.soloSide === 'left' ? wb.soloResult.file_name : ''}
+                rightLabel={wb.soloSide === 'right' ? wb.soloResult.file_name : ''}
+                focusRequest={null} />
+            ) : (
+              <div className="banner banner--error">该文件不含嵌入式元数据。</div>
+            )
           )}
 
           {wb.view === 'mirror' && wb.pairResult && pairRows && (
@@ -204,7 +218,7 @@ export default function App() {
         {showRail && (
           <DiffRail entries={diffEntries} onJump={jumpTo}
             collapsed={wb.railCollapsed}
-            onToggle={() => { setRailManual(true); wb.toggleRailCollapsed(); }} />
+            onToggle={wb.toggleRailCollapsed} />
         )}
       </div>
 
@@ -218,6 +232,15 @@ function DetailHeader({ wb, diffCount }: { wb: ReturnType<typeof useWorkbench>; 
   const name = wb.view === 'mirror'
     ? wb.pairResult?.left.file_name
     : wb.soloResult?.file_name;
+  // 单文件模式下的左右文件芯片：mirror 取两侧文件；solo 已填一侧 + 可点击的占位另一侧
+  const chips = isSingle && (wb.view === 'mirror' || wb.view === 'solo')
+    ? (['left', 'right'] as const).map((side) => {
+        const info = wb.view === 'mirror'
+          ? wb.pairResult?.[side] ?? null
+          : (wb.soloSide === side ? wb.soloResult : null);
+        return { side, name: info?.file_name ?? null, path: info?.file_path ?? null };
+      })
+    : null;
   return (
     <div className="detail-head">
       <div className="detail-head__seg" role="group" aria-label="视图模式">
@@ -235,12 +258,14 @@ function DetailHeader({ wb, diffCount }: { wb: ReturnType<typeof useWorkbench>; 
         {wb.view === 'solo' && `仅查看${wb.soloSide === 'left' ? '左' : '右'} · `}{name}
       </span>
       <span className="detail-head__spacer" />
-      {isSingle && wb.view === 'mirror' && wb.pairResult && (
+      {chips && (
         <span className="detail-head__chips">
-          <button type="button" title={wb.pairResult.left.file_path}
-            onClick={() => document.dispatchEvent(new CustomEvent('wb:pickLeft'))}>左 ⌁ {wb.pairResult.left.file_name}</button>
-          <button type="button" title={wb.pairResult.right.file_path}
-            onClick={() => document.dispatchEvent(new CustomEvent('wb:pickRight'))}>右 ⌁ {wb.pairResult.right.file_name}</button>
+          {chips.map((c) => (
+            <button key={c.side} type="button" title={c.path ?? '点击选择文件'}
+              onClick={() => document.dispatchEvent(new CustomEvent(c.side === 'left' ? 'wb:pickLeft' : 'wb:pickRight'))}>
+              {c.side === 'left' ? '左' : '右'} ⌁ {c.name ?? '未选择'}
+            </button>
+          ))}
         </span>
       )}
       {wb.view === 'mirror' && (
@@ -257,7 +282,8 @@ function ErrorCard({ item }: { item: import('./lib/types').BatchListItem }) {
       <div className="error-card__title">无法解析此文件</div>
       <div className="error-card__path">{item.label}</div>
       {item.message && <div className="error-card__msg">{item.message}</div>}
-      <button type="button" className="error-card__open" onClick={() => void openPath(target)}>打开文件 ↗</button>
+      <button type="button" className="error-card__open"
+        onClick={() => void openPath(target).catch(() => { /* 文件可能已被移动/删除：静默 */ })}>打开文件 ↗</button>
     </div>
   );
 }

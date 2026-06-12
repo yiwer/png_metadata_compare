@@ -1,5 +1,5 @@
 // frontend/src/features/workbench/useWorkbench.ts
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { workbenchApi } from '../../lib/api';
 import { touchRecent } from '../../lib/recentDirs';
 import type {
@@ -74,6 +74,8 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   const [errorItem, setErrorItem] = useState<BatchListItem | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
+  // 用户手动收/展过差异栏后（按钮或 Ctrl+Shift+B），窗口尺寸自适应让位于手动状态
+  const railManualRef = useRef(false);
 
   // Directory scans are long-running; this guards against a superseded scan
   // overwriting the progress/results of a newer one.
@@ -147,9 +149,23 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   function toggleDiffHighlight() { setDiffHighlight((v) => !v); }
   function toggleOnlyDiff() { setOnlyDiff((v) => !v); }
   function toggleSidebarCollapsed() { setSidebarCollapsed((v) => !v); }
-  function toggleRailCollapsed() { setRailCollapsed((v) => !v); }
+  const toggleRailCollapsed = useCallback(() => {
+    railManualRef.current = true;
+    setRailCollapsed((v) => !v);
+  }, []);
 
-  async function selectItem(item: BatchListItem) {
+  const query = searchQuery.trim().toLowerCase();
+  const filteredItems = useMemo(
+    () => sortItems(
+      (directorySummary?.items ?? [])
+        .filter((i) => activeFilter === 'all' || i.kind === activeFilter)
+        .filter((i) => !query || i.label.toLowerCase().includes(query)),
+      sortKey,
+    ),
+    [directorySummary, activeFilter, query, sortKey],
+  );
+
+  const selectItem = useCallback(async (item: BatchListItem) => {
     const sid = ++selectSeqRef.current;
     setSelectedItemId(item.id);
     setErrorItem(null);
@@ -168,6 +184,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
         if (selectSeqRef.current !== sid) return;
         setSoloResult(result);
         setSoloSide('left');
+        setPairResult(null);
         setView('solo');
         setViewMode('tree');
       } else if (item.kind === 'right_only' && item.right_path) {
@@ -175,12 +192,15 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
         if (selectSeqRef.current !== sid) return;
         setSoloResult(result);
         setSoloSide('right');
+        setPairResult(null);
         setView('solo');
         setViewMode('tree');
       } else if (item.left_path && item.right_path) {
         const result = await api.compareSingle(item.left_path, item.right_path);
         if (selectSeqRef.current !== sid) return;
         setPairResult(result);
+        setSoloResult(null);
+        setSoloSide(null);
         setView('mirror');
         setViewMode('tree');
       } else {
@@ -191,27 +211,27 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     } finally {
       if (selectSeqRef.current === sid) setIsLoading(false);
     }
-  }
+  }, [api]);
 
   // Backwards-compatible alias used by older tests.
   const navigateToPair = selectItem;
 
-  async function selectByOffset(delta: number) {
+  const selectByOffset = useCallback(async (delta: number) => {
     if (filteredItems.length === 0) return;
     const cur = filteredItems.findIndex((i) => i.id === selectedItemId);
     const next = cur < 0 ? 0 : Math.min(filteredItems.length - 1, Math.max(0, cur + delta));
     if (next === cur) return;
     await selectItem(filteredItems[next]);
-  }
+  }, [filteredItems, selectedItemId, selectItem]);
 
-  async function selectNext() { await selectByOffset(1); }
-  async function selectPrev() { await selectByOffset(-1); }
+  const selectNext = useCallback(async () => { await selectByOffset(1); }, [selectByOffset]);
+  const selectPrev = useCallback(async () => { await selectByOffset(-1); }, [selectByOffset]);
 
   // Task 8 之前后端还没有 cancel_scan 命令，这里先落桩：
   // api.cancelScan 是可选成员，缺省时本函数是 no-op。
-  async function cancelScan() {
+  const cancelScan = useCallback(async () => {
     try { await api.cancelScan?.(); } catch { /* 后端未实现/未启动时静默 */ }
-  }
+  }, [api]);
 
   async function runAuto() {
     const runId = ++scanSeqRef.current;
@@ -281,17 +301,6 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   // Backwards-compatible alias used by older tests.
   const runCompare = runAuto;
 
-  const query = searchQuery.trim().toLowerCase();
-  const filteredItems = useMemo(
-    () => sortItems(
-      (directorySummary?.items ?? [])
-        .filter((i) => activeFilter === 'all' || i.kind === activeFilter)
-        .filter((i) => !query || i.label.toLowerCase().includes(query)),
-      sortKey,
-    ),
-    [directorySummary, activeFilter, query, sortKey],
-  );
-
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -307,20 +316,24 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
       } else if (e.ctrlKey && !e.shiftKey && k === 'b') {
         e.preventDefault(); setSidebarCollapsed((v) => !v);
       } else if (e.ctrlKey && e.shiftKey && k === 'b') {
-        e.preventDefault(); setRailCollapsed((v) => !v);
+        e.preventDefault(); toggleRailCollapsed();
       } else if (e.ctrlKey && e.key === 'Enter') {
         e.preventDefault(); void runAuto();
-      } else if (e.key === 'ArrowDown' && directorySummary) {
-        e.preventDefault(); void selectNext();
-      } else if (e.key === 'ArrowUp' && directorySummary) {
-        e.preventDefault(); void selectPrev();
-      } else if (k === 'n' || k === 'p') {
-        document.dispatchEvent(new CustomEvent('wb:diffJump', { detail: k === 'n' ? 1 : -1 }));
-      } else if (e.key === '1') setViewMode('tree');
-      else if (e.key === '2') setViewMode('json');
-      else if (e.key === '3') setViewMode('image');
-      else if (k === 'f' && view === 'mirror') toggleOnlyDiff();
-      else if (k === 'd' && view === 'mirror') toggleDiffHighlight();
+      } else {
+        // 未匹配的修饰键组合（Ctrl/Alt/Meta）不落入单键快捷键，避免误触
+        if (e.ctrlKey || e.altKey || e.metaKey) return;
+        if (e.key === 'ArrowDown' && directorySummary) {
+          e.preventDefault(); void selectNext();
+        } else if (e.key === 'ArrowUp' && directorySummary) {
+          e.preventDefault(); void selectPrev();
+        } else if (k === 'n' || k === 'p') {
+          document.dispatchEvent(new CustomEvent('wb:diffJump', { detail: k === 'n' ? 1 : -1 }));
+        } else if (e.key === '1') setViewMode('tree');
+        else if (e.key === '2') setViewMode('json');
+        else if (e.key === '3') setViewMode('image');
+        else if (k === 'f' && view === 'mirror') toggleOnlyDiff();
+        else if (k === 'd' && view === 'mirror') toggleDiffHighlight();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -359,6 +372,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     toggleSidebarCollapsed,
     toggleRailCollapsed,
     setRailCollapsed,
+    railManualRef,
     cancelScan,
     // setters
     setMode,

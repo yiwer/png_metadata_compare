@@ -1,5 +1,5 @@
 // frontend/src/components/Sidebar.tsx
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { loadRecent } from '../lib/recentDirs';
 import type { ActiveFilter, SortKey } from '../features/workbench/useWorkbench';
@@ -54,6 +54,12 @@ export function Sidebar({
   const searchRef = useRef<HTMLInputElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; item: BatchListItem } | null>(null);
   const [pickMenu, setPickMenu] = useState<'left' | 'right' | null>(null);
+
+  // 单个稳定回调传给 memo 化的 Row，事件在 Row 内组装
+  const handleMenu = useCallback((e: React.MouseEvent, item: BatchListItem) => {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, item });
+  }, []);
 
   // Ctrl+F 经全局事件聚焦搜索框
   useEffect(() => {
@@ -141,17 +147,18 @@ export function Sidebar({
         </div>
       )}
 
-      {isLoading && (
+      {/* 扫描必有 progress 事件；selectItem 期间 scanProgress 为 null，不渲染扫描进度块 */}
+      {isLoading && scanProgress !== null && (
         <div className="sidebar__progress" role="status" aria-live="polite">
           <span>
-            {scanProgress?.stage === 'comparing' && scanProgress.total > 0
+            {scanProgress.stage === 'comparing' && scanProgress.total > 0
               ? `已比对 ${scanProgress.done} / ${scanProgress.total}`
               : '正在扫描目录…'}
           </span>
           <button type="button" className="sidebar__cancel" onClick={onCancelScan}>取消</button>
           <div className="sidebar__progress-track">
             <div className="sidebar__progress-fill" style={
-              scanProgress?.stage === 'comparing' && scanProgress.total > 0
+              scanProgress.stage === 'comparing' && scanProgress.total > 0
                 ? { width: `${Math.round((scanProgress.done / scanProgress.total) * 100)}%` }
                 : undefined
             } />
@@ -173,8 +180,7 @@ export function Sidebar({
         )}
         {filteredItems.map((item) => (
           <Row key={item.id} item={item} selected={item.id === selectedItemId}
-            onSelect={onSelect}
-            onMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, item }); }} />
+            onSelect={onSelect} onMenu={handleMenu} />
         ))}
       </div>
 
@@ -213,12 +219,12 @@ const Row = memo(function Row({
 }: {
   item: BatchListItem; selected: boolean;
   onSelect(item: BatchListItem): void;
-  onMenu(e: React.MouseEvent): void;
+  onMenu(e: React.MouseEvent, item: BatchListItem): void;
 }) {
   return (
     <div className="sidebar__row" data-selected={selected ? 'true' : undefined} role="button" tabIndex={0}
       title={[item.left_path, item.right_path].filter(Boolean).join('\n')}
-      onClick={() => onSelect(item)} onContextMenu={onMenu}
+      onClick={() => onSelect(item)} onContextMenu={(e) => onMenu(e, item)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(item); } }}>
       <span className={`sidebar__dot sidebar__dot--${KIND_DOT[item.kind]}`} />
       <span className="sidebar__name">{item.label}</span>
