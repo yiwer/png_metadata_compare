@@ -121,24 +121,23 @@ function RowView({
   const raw = row.leftRaw ?? row.rightRaw;
   return (
     <>
-      <div data-path={row.path}>
-        <GroupHead
-          label={row.label}
-          count={row.variant === 'array' ? row.count : undefined}
-          level={level}
-          open={isOpen}
-          onToggle={() => toggle(row.path)}
-          status={headStatus}
-          highlight={highlight}
-          trailing={
-            raw !== undefined ? (
-              <button type="button" className="utree__copy" aria-label="复制 JSON 子树"
-                onClick={(e) => { e.stopPropagation(); void navigator.clipboard?.writeText(JSON.stringify(raw, null, 2)); }}
-              >⧉</button>
-            ) : undefined
-          }
-        />
-      </div>
+      <GroupHead
+        label={row.label}
+        count={row.variant === 'array' ? row.count : undefined}
+        level={level}
+        dataPath={row.path}
+        open={isOpen}
+        onToggle={() => toggle(row.path)}
+        status={headStatus}
+        highlight={highlight}
+        trailing={
+          raw !== undefined ? (
+            <button type="button" className="utree__copy" aria-label="复制 JSON 子树"
+              onClick={(e) => { e.stopPropagation(); void navigator.clipboard?.writeText(JSON.stringify(raw, null, 2)); }}
+            >⧉</button>
+          ) : undefined
+        }
+      />
       {isOpen && (
         <div className="utree__nested">
           {row.children?.map((c) => (

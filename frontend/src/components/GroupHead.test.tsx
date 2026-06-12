@@ -30,4 +30,11 @@ describe('GroupHead', () => {
     expect(container.firstChild).toHaveAttribute('data-level', '3');
     expect(container.firstChild).not.toHaveClass('group-head--nested');
   });
+
+  it('renders data-path when dataPath is provided and omits it otherwise', () => {
+    const { container, rerender } = render(<GroupHead label="x" dataPath="Lines[M208]" />);
+    expect(container.firstChild).toHaveAttribute('data-path', 'Lines[M208]');
+    rerender(<GroupHead label="x" />);
+    expect(container.firstChild).not.toHaveAttribute('data-path');
+  });
 });

@@ -19,6 +19,7 @@ export function GroupHead({
   trailing,
   status,
   highlight,
+  dataPath,
 }: {
   label: string;
   count?: number;
@@ -28,11 +29,12 @@ export function GroupHead({
   trailing?: ReactNode;
   status?: DiffStatus;
   highlight?: boolean;
+  dataPath?: string;
 }) {
   const statusCls = highlight && status ? STATUS_CLASS[status] : undefined;
   const cls = ['group-head', statusCls ?? ''].filter(Boolean).join(' ');
   return (
-    <div className={cls} data-level={Math.min(level, 3)}>
+    <div className={cls} data-level={Math.min(level, 3)} data-path={dataPath}>
       <button type="button" className="group-head__toggle" onClick={onToggle} aria-label={open ? '收起' : '展开'}>
         {open ? '▼' : '▶'}
       </button>
