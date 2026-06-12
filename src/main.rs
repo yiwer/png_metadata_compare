@@ -9,7 +9,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             desktop_api::compare_single,
             desktop_api::scan_directory,
-            desktop_api::inspect_single
+            desktop_api::inspect_single,
+            desktop_api::cancel_scan
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

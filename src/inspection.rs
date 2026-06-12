@@ -111,17 +111,23 @@ pub fn inspect_single_side(path: &Path, side: UnmatchedSide) -> SideInspection {
     load_side(side, path).inspection
 }
 
+/// Scanning was cancelled by the caller's `should_cancel` hook.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ScanCancelled;
+
 pub fn scan_directory_summary(left_dir: &Path, right_dir: &Path) -> DirectorySummary {
     scan_directory_summary_with_progress(left_dir, right_dir, |_| {})
 }
 
-pub fn scan_directory_summary_with_progress<F>(
+pub fn scan_directory_summary_cancellable<F, C>(
     left_dir: &Path,
     right_dir: &Path,
     progress: F,
-) -> DirectorySummary
+    should_cancel: C,
+) -> Result<DirectorySummary, ScanCancelled>
 where
     F: Fn(ScanProgress) + Sync,
+    C: Fn() -> bool + Sync,
 {
     progress(ScanProgress {
         stage: ScanStage::Scanning,
@@ -154,9 +160,14 @@ where
             done,
             total,
         });
-    });
+    }, &should_cancel);
 
-    for (pair, diff_summary) in pairs.into_iter().zip(summaries) {
+    if should_cancel() {
+        return Err(ScanCancelled);
+    }
+
+    for (pair, diff_summary_opt) in pairs.into_iter().zip(summaries) {
+        let diff_summary = diff_summary_opt.expect("non-cancelled scan compares every pair");
         let difference_count = diff_summary.total();
         let kind = if difference_count == 0 {
             counts.identical += 1;
@@ -225,7 +236,19 @@ where
         });
     }
 
-    DirectorySummary { counts, items }
+    Ok(DirectorySummary { counts, items })
+}
+
+pub fn scan_directory_summary_with_progress<F>(
+    left_dir: &Path,
+    right_dir: &Path,
+    progress: F,
+) -> DirectorySummary
+where
+    F: Fn(ScanProgress) + Sync,
+{
+    scan_directory_summary_cancellable(left_dir, right_dir, progress, || false)
+        .expect("scan without cancel hook cannot be cancelled")
 }
 
 fn load_side(side: &'static str, path: &Path) -> LoadedSide {
@@ -235,9 +258,11 @@ fn load_side(side: &'static str, path: &Path) -> LoadedSide {
 /// Compares matched pairs across worker threads, preserving input order in the
 /// returned summaries. `on_done` is called once per completed pair with the
 /// running completion count (completion order, not input order).
-fn compare_pairs_parallel<F>(pairs: &[MatchedPair], on_done: &F) -> Vec<DiffSummary>
+/// Workers check `should_cancel` before each pair; cancelled slots remain `None`.
+fn compare_pairs_parallel<F, C>(pairs: &[MatchedPair], on_done: &F, should_cancel: &C) -> Vec<Option<DiffSummary>>
 where
     F: Fn(usize) + Sync,
+    C: Fn() -> bool + Sync,
 {
     let total = pairs.len();
     if total == 0 {
@@ -256,6 +281,9 @@ where
         for _ in 0..worker_count {
             scope.spawn(|| {
                 loop {
+                    if should_cancel() {
+                        break;
+                    }
                     let index = next_index.fetch_add(1, Ordering::Relaxed);
                     if index >= total {
                         break;
@@ -273,11 +301,7 @@ where
 
     results
         .into_iter()
-        .map(|slot| {
-            slot.into_inner()
-                .expect("result slot lock poisoned")
-                .expect("every pair is compared by a worker")
-        })
+        .map(|slot| slot.into_inner().expect("result slot lock poisoned"))
         .collect()
 }
 
@@ -379,8 +403,9 @@ fn is_descendant_path(parent: &str, child: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        BatchListItemKind, ScanProgress, ScanStage, compare_pair_summary, inspect_pair,
-        inspect_single_side, scan_directory_summary, scan_directory_summary_with_progress,
+        BatchListItemKind, ScanCancelled, ScanProgress, ScanStage, compare_pair_summary,
+        inspect_pair, inspect_single_side, scan_directory_summary,
+        scan_directory_summary_cancellable, scan_directory_summary_with_progress,
     };
     use crate::batch_report::{MatchStrategy, UnmatchedSide};
     use std::fs;
@@ -666,5 +691,36 @@ mod tests {
             }
         }
         !crc
+    }
+
+    #[test]
+    fn cancellable_scan_stops_early_and_reports_cancelled() {
+        let fixture = BatchFixture::new("cancel");
+        for i in 0..6 {
+            let name = format!("f{i}.png");
+            fixture.write_left_png(&name, "shared", r#"{"Title":"L"}"#);
+            fixture.write_right_png(&name, "shared", r#"{"Title":"R"}"#);
+        }
+
+        let result = scan_directory_summary_cancellable(
+            fixture.left_dir(),
+            fixture.right_dir(),
+            |_p| {},
+            || true, // 立即取消
+        );
+
+        assert!(matches!(result, Err(ScanCancelled)));
+    }
+
+    #[test]
+    fn cancellable_scan_with_no_cancel_matches_plain_scan() {
+        let fixture = BatchFixture::new("cancel_noop");
+        fixture.write_left_png("a.png", "shared", r#"{"Title":"A"}"#);
+        fixture.write_right_png("a.png", "shared", r#"{"Title":"A"}"#);
+
+        let result =
+            scan_directory_summary_cancellable(fixture.left_dir(), fixture.right_dir(), |_p| {}, || false)
+                .expect("not cancelled");
+        assert_eq!(result, scan_directory_summary(fixture.left_dir(), fixture.right_dir()));
     }
 }

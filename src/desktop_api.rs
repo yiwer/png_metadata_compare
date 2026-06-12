@@ -1,10 +1,15 @@
 use png_metadata_compare::batch_report::UnmatchedSide;
 use png_metadata_compare::inspection::{
     DirectorySummary, PairInspection, ScanProgress, SideInspection, inspect_pair,
-    inspect_single_side, scan_directory_summary_with_progress,
+    inspect_single_side, scan_directory_summary_cancellable,
 };
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::ipc::Channel;
+
+/// Scan generation counter: every new scan or explicit cancel bumps it.
+/// Workers check their captured generation against this; a mismatch means cancel.
+static SCAN_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 // Commands are async so the work runs off the main thread — synchronous Tauri
 // commands block the webview event loop, which froze the app on large inputs.
@@ -23,14 +28,26 @@ pub async fn scan_directory(
     right_dir: String,
     on_progress: Channel<ScanProgress>,
 ) -> Result<DirectorySummary, String> {
+    let my_gen = SCAN_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     run_blocking(move || {
-        scan_directory_summary_with_progress(Path::new(&left_dir), Path::new(&right_dir), |p| {
-            if should_emit_progress(p) {
-                let _ = on_progress.send(p);
-            }
-        })
+        scan_directory_summary_cancellable(
+            Path::new(&left_dir),
+            Path::new(&right_dir),
+            |p| {
+                if should_emit_progress(p) {
+                    let _ = on_progress.send(p);
+                }
+            },
+            || SCAN_GENERATION.load(Ordering::SeqCst) != my_gen,
+        )
     })
-    .await
+    .await?
+    .map_err(|_| "cancelled".to_string())
+}
+
+#[tauri::command]
+pub fn cancel_scan() {
+    SCAN_GENERATION.fetch_add(1, Ordering::SeqCst);
 }
 
 #[tauri::command]
@@ -119,6 +136,14 @@ mod tests {
         .expect_err("inspect command should reject unsupported sides");
 
         assert_eq!(error, "unsupported side: center");
+    }
+
+    #[test]
+    fn cancel_scan_bumps_generation() {
+        use std::sync::atomic::Ordering;
+        let before = super::SCAN_GENERATION.load(Ordering::SeqCst);
+        super::cancel_scan();
+        assert_eq!(super::SCAN_GENERATION.load(Ordering::SeqCst), before + 1);
     }
 
     #[test]

@@ -289,7 +289,16 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
         setView('welcome');
       }
     } catch (err) {
-      if (scanSeqRef.current === runId) setError(formatError(err));
+      if (scanSeqRef.current === runId) {
+        const msg = formatError(err);
+        if (msg.includes('cancelled')) {
+          setView('welcome');
+          setDirectorySummary(null);
+          setSelectedItemId(null);
+        } else {
+          setError(msg);
+        }
+      }
     } finally {
       if (scanSeqRef.current === runId) {
         setIsLoading(false);

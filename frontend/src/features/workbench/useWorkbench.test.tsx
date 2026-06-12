@@ -34,6 +34,7 @@ function makeApi(overrides: Partial<WorkbenchApi> = {}): WorkbenchApi {
       metadata: null,
       error: null,
     }),
+    cancelScan: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -328,6 +329,28 @@ describe('sidebar selection & search (redesign)', () => {
     expect(result.current.errorItem?.id).toBe('e1');
     expect(result.current.view).toBe('error');
     expect(api.compareSingle).not.toHaveBeenCalled();
+  });
+
+  it('cancelScan invokes api and a cancelled scan resets silently to welcome', async () => {
+    let rejectScan!: (e: Error) => void;
+    const api = makeApi({
+      cancelScan: vi.fn().mockResolvedValue(undefined),
+      scanDirectory: vi.fn().mockImplementation(() => new Promise((_res, rej) => { rejectScan = rej; })),
+    });
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
+    let pending!: Promise<void>;
+    act(() => { pending = result.current.runCompare(); });
+    await act(async () => {
+      await result.current.cancelScan();
+      rejectScan(new Error('cancelled'));
+      await pending;
+    });
+    expect(api.cancelScan).toHaveBeenCalled();
+    expect(result.current.error).toBeNull();
+    expect(result.current.view).toBe('welcome');
+    expect(result.current.isLoading).toBe(false);
   });
 
   it('a stale auto-select compare cannot clobber a newer scan', async () => {
