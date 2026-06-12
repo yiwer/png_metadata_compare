@@ -1,4 +1,4 @@
-use crate::batch_report::{MatchStrategy, UnmatchedSide};
+use crate::batch_report::{MatchStrategy, MatchedPair, UnmatchedSide};
 use crate::batch_scan::scan_png_files_best_effort;
 use crate::diff::{DiffNode, DiffSummary, compare_metadata, flatten_changes, summarize_changes};
 use crate::error::{CompareError, UiError};
@@ -7,6 +7,8 @@ use crate::png_reader::extract_stop_plate_metadata_from_file;
 use serde::Serialize;
 use serde_json::Value;
 use std::path::Path;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SideInspection {
@@ -69,6 +71,20 @@ pub struct DirectorySummary {
     pub items: Vec<BatchListItem>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScanStage {
+    Scanning,
+    Comparing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ScanProgress {
+    pub stage: ScanStage,
+    pub done: usize,
+    pub total: usize,
+}
+
 pub fn inspect_pair(left_path: &Path, right_path: &Path) -> PairInspection {
     let left = load_side("left", left_path);
     let right = load_side("right", right_path);
@@ -96,6 +112,22 @@ pub fn inspect_single_side(path: &Path, side: UnmatchedSide) -> SideInspection {
 }
 
 pub fn scan_directory_summary(left_dir: &Path, right_dir: &Path) -> DirectorySummary {
+    scan_directory_summary_with_progress(left_dir, right_dir, |_| {})
+}
+
+pub fn scan_directory_summary_with_progress<F>(
+    left_dir: &Path,
+    right_dir: &Path,
+    progress: F,
+) -> DirectorySummary
+where
+    F: Fn(ScanProgress) + Sync,
+{
+    progress(ScanProgress {
+        stage: ScanStage::Scanning,
+        done: 0,
+        total: 0,
+    });
     let left_scan = scan_png_files_best_effort(left_dir);
     let right_scan = scan_png_files_best_effort(right_dir);
     let mut counts = BatchCounts::default();
@@ -109,8 +141,22 @@ pub fn scan_directory_summary(left_dir: &Path, right_dir: &Path) -> DirectorySum
         pairing.right_only.clear();
     }
 
-    for pair in pairing.matched {
-        let diff_summary = compare_pair_summary(&pair.left.absolute_path, &pair.right.absolute_path);
+    let pairs = pairing.matched;
+    let total = pairs.len();
+    progress(ScanProgress {
+        stage: ScanStage::Comparing,
+        done: 0,
+        total,
+    });
+    let summaries = compare_pairs_parallel(&pairs, &|done| {
+        progress(ScanProgress {
+            stage: ScanStage::Comparing,
+            done,
+            total,
+        });
+    });
+
+    for (pair, diff_summary) in pairs.into_iter().zip(summaries) {
         let difference_count = diff_summary.total();
         let kind = if difference_count == 0 {
             counts.identical += 1;
@@ -184,6 +230,55 @@ pub fn scan_directory_summary(left_dir: &Path, right_dir: &Path) -> DirectorySum
 
 fn load_side(side: &'static str, path: &Path) -> LoadedSide {
     side_from_raw(side, path, extract_stop_plate_metadata_from_file(path))
+}
+
+/// Compares matched pairs across worker threads, preserving input order in the
+/// returned summaries. `on_done` is called once per completed pair with the
+/// running completion count (completion order, not input order).
+fn compare_pairs_parallel<F>(pairs: &[MatchedPair], on_done: &F) -> Vec<DiffSummary>
+where
+    F: Fn(usize) + Sync,
+{
+    let total = pairs.len();
+    if total == 0 {
+        return Vec::new();
+    }
+
+    let worker_count = std::thread::available_parallelism()
+        .map(|parallelism| parallelism.get())
+        .unwrap_or(4)
+        .min(total);
+    let next_index = AtomicUsize::new(0);
+    let completed = AtomicUsize::new(0);
+    let results: Vec<Mutex<Option<DiffSummary>>> = (0..total).map(|_| Mutex::new(None)).collect();
+
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            scope.spawn(|| {
+                loop {
+                    let index = next_index.fetch_add(1, Ordering::Relaxed);
+                    if index >= total {
+                        break;
+                    }
+                    let pair = &pairs[index];
+                    let summary =
+                        compare_pair_summary(&pair.left.absolute_path, &pair.right.absolute_path);
+                    *results[index].lock().expect("result slot lock poisoned") = Some(summary);
+                    let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
+                    on_done(done);
+                }
+            });
+        }
+    });
+
+    results
+        .into_iter()
+        .map(|slot| {
+            slot.into_inner()
+                .expect("result slot lock poisoned")
+                .expect("every pair is compared by a worker")
+        })
+        .collect()
 }
 
 fn compare_pair_summary(left_path: &Path, right_path: &Path) -> DiffSummary {
@@ -284,8 +379,8 @@ fn is_descendant_path(parent: &str, child: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        BatchListItemKind, compare_pair_summary, inspect_pair, inspect_single_side,
-        scan_directory_summary,
+        BatchListItemKind, ScanProgress, ScanStage, compare_pair_summary, inspect_pair,
+        inspect_single_side, scan_directory_summary, scan_directory_summary_with_progress,
     };
     use crate::batch_report::{MatchStrategy, UnmatchedSide};
     use std::fs;
@@ -364,6 +459,60 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn scan_directory_summary_with_progress_reports_each_compared_pair() {
+        let fixture = BatchFixture::new("progress");
+        fixture.write_left_png("a.png", "shared", r#"{"Title":"A"}"#);
+        fixture.write_right_png("a.png", "shared", r#"{"Title":"A"}"#);
+        fixture.write_left_png("b.png", "shared", r#"{"Title":"Left"}"#);
+        fixture.write_right_png("b.png", "shared", r#"{"Title":"Right"}"#);
+        fixture.write_left_png("c.png", "shared", r#"{"Title":"C"}"#);
+        fixture.write_right_png("c.png", "shared", r#"{"Title":"C"}"#);
+
+        let events = std::sync::Mutex::new(Vec::new());
+        let payload =
+            scan_directory_summary_with_progress(fixture.left_dir(), fixture.right_dir(), |p| {
+                events.lock().unwrap().push(p);
+            });
+        let events = events.into_inner().unwrap();
+
+        assert_eq!(
+            events.first().copied(),
+            Some(ScanProgress {
+                stage: ScanStage::Scanning,
+                done: 0,
+                total: 0
+            })
+        );
+
+        let comparing: Vec<ScanProgress> = events
+            .iter()
+            .filter(|event| event.stage == ScanStage::Comparing)
+            .copied()
+            .collect();
+        assert_eq!(
+            comparing.first().map(|event| (event.done, event.total)),
+            Some((0, 3))
+        );
+        assert!(comparing.iter().all(|event| event.total == 3));
+        // Pairs are compared concurrently, so completion events may arrive in any
+        // order — but each pair must be reported exactly once.
+        let mut done_counts: Vec<usize> = comparing
+            .iter()
+            .skip(1)
+            .map(|event| event.done)
+            .collect();
+        done_counts.sort_unstable();
+        assert_eq!(done_counts, vec![1, 2, 3]);
+
+        assert_eq!(
+            payload,
+            scan_directory_summary(fixture.left_dir(), fixture.right_dir())
+        );
+        assert_eq!(payload.counts.identical, 2);
+        assert_eq!(payload.counts.different, 1);
     }
 
     #[test]

@@ -5,4 +5,5 @@ pub mod diff;
 pub mod error;
 pub mod inspection;
 pub mod metadata;
+pub mod pairing_key;
 pub mod png_reader;

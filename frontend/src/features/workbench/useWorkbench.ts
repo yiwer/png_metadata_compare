@@ -6,6 +6,7 @@ import type {
   BatchListItemKind,
   DirectorySummary,
   PairInspection,
+  ScanProgress,
   SideInspection,
   WorkbenchMode,
 } from '../../lib/types';
@@ -56,8 +57,13 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   const [slotBarCollapsed, setSlotBarCollapsed] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  // Directory scans are long-running; this guards against a superseded scan
+  // overwriting the progress/results of a newer one.
+  const scanSeqRef = useRef(0);
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -175,6 +181,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   }
 
   async function runAuto() {
+    const runId = ++scanSeqRef.current;
     setIsLoading(true);
     setError(null);
     try {
@@ -210,7 +217,10 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
       }
       // directory mode
       if (left && right) {
-        const summary = await api.scanDirectory(left, right);
+        const summary = await api.scanDirectory(left, right, (progress) => {
+          if (scanSeqRef.current === runId) setScanProgress(progress);
+        });
+        if (scanSeqRef.current !== runId) return; // superseded by a newer scan
         setDirectorySummary(summary);
         setPairResult(null);
         setSoloResult(null); setSoloSide(null);
@@ -223,9 +233,12 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
         setSlotBarCollapsed(false);
       }
     } catch (err) {
-      setError(formatError(err));
+      if (scanSeqRef.current === runId) setError(formatError(err));
     } finally {
-      setIsLoading(false);
+      if (scanSeqRef.current === runId) {
+        setIsLoading(false);
+        setScanProgress(null);
+      }
     }
   }
 
@@ -291,6 +304,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     onlyDiff,
     slotBarCollapsed,
     isLoading,
+    scanProgress,
     error,
     toast,
     setMode,

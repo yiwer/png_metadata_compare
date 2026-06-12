@@ -1,32 +1,67 @@
 use png_metadata_compare::batch_report::UnmatchedSide;
 use png_metadata_compare::inspection::{
-    DirectorySummary, PairInspection, SideInspection, inspect_pair, inspect_single_side,
-    scan_directory_summary,
+    DirectorySummary, PairInspection, ScanProgress, SideInspection, inspect_pair,
+    inspect_single_side, scan_directory_summary_with_progress,
 };
 use std::path::Path;
+use tauri::ipc::Channel;
+
+// Commands are async so the work runs off the main thread — synchronous Tauri
+// commands block the webview event loop, which froze the app on large inputs.
 
 #[tauri::command]
-pub fn compare_single(left_path: String, right_path: String) -> Result<PairInspection, String> {
-    Ok(inspect_pair(Path::new(&left_path), Path::new(&right_path)))
+pub async fn compare_single(
+    left_path: String,
+    right_path: String,
+) -> Result<PairInspection, String> {
+    run_blocking(move || inspect_pair(Path::new(&left_path), Path::new(&right_path))).await
 }
 
 #[tauri::command]
-pub fn scan_directory(left_dir: String, right_dir: String) -> Result<DirectorySummary, String> {
-    Ok(scan_directory_summary(
-        Path::new(&left_dir),
-        Path::new(&right_dir),
-    ))
+pub async fn scan_directory(
+    left_dir: String,
+    right_dir: String,
+    on_progress: Channel<ScanProgress>,
+) -> Result<DirectorySummary, String> {
+    run_blocking(move || {
+        scan_directory_summary_with_progress(Path::new(&left_dir), Path::new(&right_dir), |p| {
+            if should_emit_progress(p) {
+                let _ = on_progress.send(p);
+            }
+        })
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn inspect_single(path: String, side: String) -> Result<SideInspection, String> {
+pub async fn inspect_single(path: String, side: String) -> Result<SideInspection, String> {
     let parsed_side = match side.as_str() {
         "left" => UnmatchedSide::Left,
         "right" => UnmatchedSide::Right,
         _ => return Err(format!("unsupported side: {side}")),
     };
 
-    Ok(inspect_single_side(Path::new(&path), parsed_side))
+    run_blocking(move || inspect_single_side(Path::new(&path), parsed_side)).await
+}
+
+async fn run_blocking<T, F>(task: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|err| format!("background task failed: {err}"))
+}
+
+/// Caps progress IPC traffic at roughly 200 messages per scan; stage
+/// transitions and the final event always go through.
+fn should_emit_progress(progress: ScanProgress) -> bool {
+    if progress.done == 0 || progress.done == progress.total {
+        return true;
+    }
+    let step = (progress.total / 200).max(1);
+    progress.done % step == 0
 }
 
 #[cfg(test)]
@@ -42,10 +77,10 @@ mod tests {
         let left = fixture.write_png("left.png", r#"{"Title":"Left"}"#);
         let right = fixture.write_png("right.png", r#"{"Title":"Right"}"#);
 
-        let payload = compare_single(
+        let payload = tauri::async_runtime::block_on(compare_single(
             left.display().to_string(),
             right.display().to_string(),
-        )
+        ))
         .expect("compare command should succeed");
 
         assert_eq!(payload.left.file_path, left.display().to_string());
@@ -60,8 +95,11 @@ mod tests {
         let fixture = TestFixture::new("inspect_single");
         let left = fixture.write_png("left-only.png", r#"{"Title":"Solo"}"#);
 
-        let payload = inspect_single(left.display().to_string(), "left".to_string())
-            .expect("inspect command should succeed");
+        let payload = tauri::async_runtime::block_on(inspect_single(
+            left.display().to_string(),
+            "left".to_string(),
+        ))
+        .expect("inspect command should succeed");
 
         assert_eq!(payload.side, "left");
         assert_eq!(payload.file_path, left.display().to_string());
@@ -74,8 +112,11 @@ mod tests {
         let fixture = TestFixture::new("inspect_single_invalid_side");
         let left = fixture.write_png("left-only.png", r#"{"Title":"Solo"}"#);
 
-        let error = inspect_single(left.display().to_string(), "center".to_string())
-            .expect_err("inspect command should reject unsupported sides");
+        let error = tauri::async_runtime::block_on(inspect_single(
+            left.display().to_string(),
+            "center".to_string(),
+        ))
+        .expect_err("inspect command should reject unsupported sides");
 
         assert_eq!(error, "unsupported side: center");
     }
@@ -89,10 +130,11 @@ mod tests {
         fixture.write_right_png("diff.png", "shared", r#"{"Title":"Right"}"#);
         fixture.write_left_png("left-only.png", "shared", r#"{"Title":"Only"}"#);
 
-        let payload = scan_directory(
+        let payload = tauri::async_runtime::block_on(scan_directory(
             fixture.left_dir().display().to_string(),
             fixture.right_dir().display().to_string(),
-        )
+            tauri::ipc::Channel::new(|_| Ok(())),
+        ))
         .expect("scan command should succeed");
 
         assert_eq!(payload.counts.identical, 1);

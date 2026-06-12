@@ -11,7 +11,7 @@ import { DirectoryList } from './components/DirectoryList';
 import { useWorkbench } from './features/workbench/useWorkbench';
 import { buildMirrorRows, hasDiffDeep } from './lib/treeModel';
 import type { MirrorRow } from './lib/treeModel';
-import type { DiffNode, DiffStatus, JsonValue } from './lib/types';
+import type { DiffNode, DiffStatus, JsonValue, ScanProgress } from './lib/types';
 
 const win = getCurrentWindow();
 
@@ -132,6 +132,8 @@ export default function App() {
 
       {wb.error && <div className="banner banner--error">{wb.error}</div>}
 
+      {wb.isLoading && isDir && <ScanProgressBar progress={wb.scanProgress} />}
+
       <main style={{ overflow: 'hidden' }}>
         {wb.view === 'welcome' && <Welcome mode={wb.mode} />}
 
@@ -190,6 +192,26 @@ export default function App() {
       </main>
 
       {wb.toast && <div className="toast">{wb.toast}</div>}
+    </div>
+  );
+}
+
+function ScanProgressBar({ progress }: { progress: ScanProgress | null }) {
+  const comparing = progress?.stage === 'comparing' && progress.total > 0;
+  const percent = comparing ? Math.round((progress.done / progress.total) * 100) : 0;
+  return (
+    <div className="scan-progress" role="status" aria-live="polite">
+      <span className="scan-progress__label">
+        {comparing
+          ? `正在比对 ${progress.done} / ${progress.total} 对文件 (${percent}%)`
+          : '正在扫描目录…'}
+      </span>
+      <div className="scan-progress__track">
+        <div
+          className={`scan-progress__fill${comparing ? '' : ' scan-progress__fill--indeterminate'}`}
+          style={comparing ? { width: `${percent}%` } : undefined}
+        />
+      </div>
     </div>
   );
 }

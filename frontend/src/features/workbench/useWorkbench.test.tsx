@@ -68,8 +68,34 @@ describe('useWorkbench', () => {
     act(() => { result.current.setMode('directory'); });
     act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
     await act(async () => { await result.current.runCompare(); });
-    expect(api.scanDirectory).toHaveBeenCalledWith('/left', '/right');
+    expect(api.scanDirectory).toHaveBeenCalledWith('/left', '/right', expect.any(Function));
     expect(result.current.view).toBe('directory-overview');
+    expect(result.current.directorySummary).toBe(mockSummary);
+  });
+
+  it('exposes scan progress while a directory scan runs and clears it after', async () => {
+    let resolveScan!: (summary: DirectorySummary) => void;
+    let reportProgress!: (progress: { stage: 'scanning' | 'comparing'; done: number; total: number }) => void;
+    const api = makeApi({
+      scanDirectory: vi.fn().mockImplementation((_l, _r, onProgress) => {
+        reportProgress = onProgress;
+        return new Promise<DirectorySummary>((resolve) => { resolveScan = resolve; });
+      }),
+    });
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
+
+    let pending!: Promise<void>;
+    act(() => { pending = result.current.runCompare(); });
+    expect(result.current.isLoading).toBe(true);
+
+    act(() => { reportProgress({ stage: 'comparing', done: 3, total: 10 }); });
+    expect(result.current.scanProgress).toEqual({ stage: 'comparing', done: 3, total: 10 });
+
+    await act(async () => { resolveScan(mockSummary); await pending; });
+    expect(result.current.scanProgress).toBeNull();
+    expect(result.current.isLoading).toBe(false);
     expect(result.current.directorySummary).toBe(mockSummary);
   });
 

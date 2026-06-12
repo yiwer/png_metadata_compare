@@ -225,6 +225,7 @@ fn match_strategy_label(strategy: &MatchStrategy) -> &'static str {
     match strategy {
         MatchStrategy::FileName => "file name",
         MatchStrategy::FileNameAndParentDir => "file name + parent directory",
+        MatchStrategy::CanonicalStopId => "canonical stop id",
     }
 }
 

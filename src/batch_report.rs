@@ -8,6 +8,7 @@ use std::path::PathBuf;
 pub enum MatchStrategy {
     FileName,
     FileNameAndParentDir,
+    CanonicalStopId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

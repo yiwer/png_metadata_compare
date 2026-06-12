@@ -483,6 +483,33 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 .banner { padding: 8px var(--sp-3); font-size: var(--fs-sm); }
 .banner--error { background: var(--err-bg); color: var(--err-text); }
 
+/* === Directory scan progress === */
+.scan-progress {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: 8px var(--sp-3);
+  background: var(--bg-controlbar);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--fs-sm); color: var(--text-secondary);
+}
+.scan-progress__label { white-space: nowrap; }
+.scan-progress__track {
+  flex: 1; height: 6px; overflow: hidden;
+  background: var(--bg-elevated);
+  border-radius: 3px;
+}
+.scan-progress__fill {
+  height: 100%; background: var(--accent); border-radius: 3px;
+  transition: width 120ms linear;
+}
+.scan-progress__fill--indeterminate {
+  width: 30%;
+  animation: scan-progress-slide 1.2s ease-in-out infinite;
+}
+@keyframes scan-progress-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(340%); }
+}
+
 /* === Toast === */
 .toast {
   position: fixed; top: 50px; left: 50%; transform: translateX(-50%);

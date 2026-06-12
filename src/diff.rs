@@ -1,4 +1,4 @@
-use crate::config::config;
+use crate::config::{CompareConfig, config};
 use crate::error::CompareError;
 use crate::metadata::MetadataLoadResult;
 use serde::Serialize;
@@ -50,6 +50,17 @@ struct KeyedArrayIndex<'a> {
 }
 
 pub fn compare_metadata(left: &MetadataLoadResult, right: &MetadataLoadResult) -> DiffNode {
+    compare_metadata_with_config(config(), left, right)
+}
+
+/// Same as [`compare_metadata`] but with an explicit config instead of the
+/// process-wide one loaded from `compare-config.json` — lets tests pin the
+/// rules they assert against.
+pub fn compare_metadata_with_config(
+    cfg: &CompareConfig,
+    left: &MetadataLoadResult,
+    right: &MetadataLoadResult,
+) -> DiffNode {
     match (left, right) {
         (MetadataLoadResult::Error(left_err), MetadataLoadResult::Error(right_err)) => {
             error_node("", Some(left_err), Some(right_err))
@@ -61,12 +72,17 @@ pub fn compare_metadata(left: &MetadataLoadResult, right: &MetadataLoadResult) -
             error_node("", None, Some(right_err))
         }
         (MetadataLoadResult::Parsed(left_value), MetadataLoadResult::Parsed(right_value)) => {
-            compare_values("", Some(left_value), Some(right_value))
+            compare_values(cfg, "", Some(left_value), Some(right_value))
         }
     }
 }
 
-fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> DiffNode {
+fn compare_values(
+    cfg: &CompareConfig,
+    path: &str,
+    left: Option<&Value>,
+    right: Option<&Value>,
+) -> DiffNode {
     match (left, right) {
         (Some(Value::Object(left_map)), Some(Value::Object(right_map))) => {
             let mut keys = BTreeSet::new();
@@ -75,7 +91,7 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
             for known in schema_keys_for_path(path) {
                 keys.insert((*known).to_string());
             }
-            keys.retain(|key| !is_ignored_field(&join_path(path, key)));
+            keys.retain(|key| !is_ignored_field(cfg, &join_path(path, key)));
 
             let null = Value::Null;
             let empty_object = Value::Object(serde_json::Map::new());
@@ -99,7 +115,7 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
                         (None, Some(rv)) => (Some(placeholder_for(rv)), Some(rv)),
                         (None, None) => (Some(&null), Some(&null)),
                     };
-                    compare_values(&join_path(path, &key), left_filled, right_filled)
+                    compare_values(cfg, &join_path(path, &key), left_filled, right_filled)
                 })
                 .collect();
 
@@ -108,8 +124,8 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
         (None, Some(Value::Object(right_map))) => {
             let children = right_map
                 .iter()
-                .filter(|(key, _)| !is_ignored_field(&join_path(path, key)))
-                .map(|(key, value)| compare_values(&join_path(path, key), None, Some(value)))
+                .filter(|(key, _)| !is_ignored_field(cfg, &join_path(path, key)))
+                .map(|(key, value)| compare_values(cfg, &join_path(path, key), None, Some(value)))
                 .collect();
 
             aggregate_node(path, left.is_some(), right.is_some(), children)
@@ -117,21 +133,23 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
         (Some(Value::Object(left_map)), None) => {
             let children = left_map
                 .iter()
-                .filter(|(key, _)| !is_ignored_field(&join_path(path, key)))
-                .map(|(key, value)| compare_values(&join_path(path, key), Some(value), None))
+                .filter(|(key, _)| !is_ignored_field(cfg, &join_path(path, key)))
+                .map(|(key, value)| compare_values(cfg, &join_path(path, key), Some(value), None))
                 .collect();
 
             aggregate_node(path, left.is_some(), right.is_some(), children)
         }
         (Some(Value::Array(left_items)), Some(Value::Array(right_items))) => {
-            compare_array(path, Some(left_items), Some(right_items))
+            compare_array(cfg, path, Some(left_items), Some(right_items))
         }
-        (None, Some(Value::Array(right_items))) => compare_array(path, None, Some(right_items)),
-        (Some(Value::Array(left_items)), None) => compare_array(path, Some(left_items), None),
+        (None, Some(Value::Array(right_items))) => {
+            compare_array(cfg, path, None, Some(right_items))
+        }
+        (Some(Value::Array(left_items)), None) => compare_array(cfg, path, Some(left_items), None),
         _ => {
             let status = match (left, right) {
                 (Some(left_value), Some(right_value))
-                    if scalars_are_equivalent_at(path, left_value, right_value) =>
+                    if scalars_are_equivalent_at(cfg, path, left_value, right_value) =>
                 {
                     DiffStatus::Unchanged
                 }
@@ -148,12 +166,18 @@ fn compare_values(path: &str, left: Option<&Value>, right: Option<&Value>) -> Di
     }
 }
 
-fn compare_array(path: &str, left: Option<&[Value]>, right: Option<&[Value]>) -> DiffNode {
+fn compare_array(
+    cfg: &CompareConfig,
+    path: &str,
+    left: Option<&[Value]>,
+    right: Option<&[Value]>,
+) -> DiffNode {
     let left_items = left.unwrap_or(&[]);
     let right_items = right.unwrap_or(&[]);
 
     if let Some(key_fn) = business_key_for_path(path) {
         return compare_keyed_array(
+            cfg,
             path,
             left.is_some(),
             right.is_some(),
@@ -167,6 +191,7 @@ fn compare_array(path: &str, left: Option<&[Value]>, right: Option<&[Value]>) ->
     let children = (0..max_len)
         .map(|index| {
             compare_values(
+                cfg,
                 &join_index_path(path, index),
                 left_items.get(index),
                 right_items.get(index),
@@ -178,6 +203,7 @@ fn compare_array(path: &str, left: Option<&[Value]>, right: Option<&[Value]>) ->
 }
 
 fn compare_keyed_array(
+    cfg: &CompareConfig,
     path: &str,
     left_present: bool,
     right_present: bool,
@@ -205,6 +231,7 @@ fn compare_keyed_array(
         for i in 0..matched {
             let child_path = join_keyed_occurrence_path(path, &key, i, with_suffix);
             children.push(compare_values(
+                cfg,
                 &child_path,
                 Some(left_list[i]),
                 Some(right_list[i]),
@@ -212,11 +239,11 @@ fn compare_keyed_array(
         }
         for i in matched..left_list.len() {
             let child_path = join_keyed_occurrence_path(path, &key, i, with_suffix);
-            children.push(compare_values(&child_path, Some(left_list[i]), None));
+            children.push(compare_values(cfg, &child_path, Some(left_list[i]), None));
         }
         for i in matched..right_list.len() {
             let child_path = join_keyed_occurrence_path(path, &key, i, with_suffix);
-            children.push(compare_values(&child_path, None, Some(right_list[i])));
+            children.push(compare_values(cfg, &child_path, None, Some(right_list[i])));
         }
     }
 
@@ -330,8 +357,8 @@ fn schema_keys_for_path(path: &str) -> &'static [&'static str] {
 /// 强制忽略的字段——即使两侧都有值也不进入 diff。
 /// 来源：`compare-config.json` 的 `ignored_fields`，缺省含 `Lines[*].RouteStops[*].Sequence`
 /// （列表已按 Sequence 排序展示，再报 Sequence 改动是噪音）。
-fn is_ignored_field(path: &str) -> bool {
-    config().is_ignored(&normalize_path_for_schema(path))
+fn is_ignored_field(cfg: &CompareConfig, path: &str) -> bool {
+    cfg.is_ignored(&normalize_path_for_schema(path))
 }
 
 fn is_blank_scalar(value: &Value) -> bool {
@@ -346,13 +373,12 @@ fn is_blank_scalar(value: &Value) -> bool {
 /// String values matching an entry in the equivalence map are folded to their canonical
 /// form before comparison; other types fall back to literal equality + blank-scalar
 /// equivalence.
-fn scalars_are_equivalent_at(path: &str, left: &Value, right: &Value) -> bool {
+fn scalars_are_equivalent_at(cfg: &CompareConfig, path: &str, left: &Value, right: &Value) -> bool {
     if is_blank_scalar(left) && is_blank_scalar(right) {
         return true;
     }
     if let (Value::String(ls), Value::String(rs)) = (left, right) {
         let normalized = normalize_path_for_schema(path);
-        let cfg = config();
         return cfg.canonicalize(&normalized, ls) == cfg.canonicalize(&normalized, rs);
     }
     left == right
@@ -559,10 +585,20 @@ fn collect_changes(node: &DiffNode, changes: &mut Vec<DiffNode>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{DiffNode, DiffStatus, compare_metadata, flatten_changes, summarize_changes};
+    use super::{
+        DiffNode, DiffStatus, compare_metadata, compare_metadata_with_config, flatten_changes,
+        summarize_changes,
+    };
+    use crate::config::CompareConfig;
     use crate::error::CompareError;
     use crate::metadata::MetadataLoadResult;
     use serde_json::json;
+
+    /// Pins the bundled default config so test outcomes don't depend on the
+    /// user-editable compare-config.json in the working directory.
+    fn compare_with_defaults(left: &MetadataLoadResult, right: &MetadataLoadResult) -> DiffNode {
+        compare_metadata_with_config(&CompareConfig::default(), left, right)
+    }
 
     #[test]
     #[ignore]
@@ -573,6 +609,8 @@ mod tests {
         let left = MetadataLoadResult::Parsed(serde_json::from_str(&strip_bom(&left_text)).unwrap());
         let right = MetadataLoadResult::Parsed(serde_json::from_str(&strip_bom(&right_text)).unwrap());
 
+        // Deliberately uses the ambient config()-backed entry point — this
+        // ignored helper dumps diffs exactly as the running app would compute them.
         let diff = compare_metadata(&left, &right);
         let changes = flatten_changes(&diff);
         let summary = summarize_changes(&changes);
@@ -628,7 +666,7 @@ mod tests {
         let left = MetadataLoadResult::Parsed(json!({"name": "left"}));
         let right = MetadataLoadResult::Parsed(json!({"name": "right"}));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let child = diff
             .children
             .iter()
@@ -645,7 +683,7 @@ mod tests {
         let left = MetadataLoadResult::Parsed(json!({}));
         let right = MetadataLoadResult::Parsed(json!({"newField": 7}));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let child = diff
             .children
             .iter()
@@ -666,7 +704,7 @@ mod tests {
             ]
         }));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let items = diff
             .children
             .iter()
@@ -703,7 +741,7 @@ mod tests {
         }));
         let right = MetadataLoadResult::Parsed(json!({}));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let items = diff
             .children
             .iter()
@@ -723,11 +761,11 @@ mod tests {
 
     #[test]
     fn treats_absent_object_field_as_equal_to_empty_container_on_other_side() {
-        let added = compare_metadata(
+        let added = compare_with_defaults(
             &MetadataLoadResult::Parsed(json!({})),
             &MetadataLoadResult::Parsed(json!({"emptyObject": {}, "emptyArray": []})),
         );
-        let removed = compare_metadata(
+        let removed = compare_with_defaults(
             &MetadataLoadResult::Parsed(json!({"emptyObject": {}, "emptyArray": []})),
             &MetadataLoadResult::Parsed(json!({})),
         );
@@ -766,7 +804,7 @@ mod tests {
             "items": ["right"]
         }));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let items = diff
             .children
             .iter()
@@ -793,7 +831,7 @@ mod tests {
         let left = MetadataLoadResult::Error(CompareError::MissingStopPlateMetadata);
         let right = MetadataLoadResult::Parsed(json!({"name": "ok"}));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
 
         assert_eq!(diff.path, "StopPlateMetadata");
         assert_eq!(diff.status, DiffStatus::Error);
@@ -820,7 +858,7 @@ mod tests {
             ]
         }));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let lines = diff
             .children
             .iter()
@@ -863,7 +901,7 @@ mod tests {
             ]
         }));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let historical_lines = diff
             .children
             .iter()
@@ -906,7 +944,7 @@ mod tests {
             }]
         }));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let changes = flatten_changes(&diff);
 
         assert!(
@@ -943,7 +981,7 @@ mod tests {
             }]
         }));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let changes = flatten_changes(&diff);
 
         assert!(
@@ -979,7 +1017,7 @@ mod tests {
         }));
         let right = MetadataLoadResult::Parsed(json!({"GroupItems": []}));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let group_items = diff
             .children
             .iter()
@@ -1023,7 +1061,7 @@ mod tests {
             ]
         }));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let group_items = diff
             .children
             .iter()
@@ -1064,7 +1102,7 @@ mod tests {
             ]
         }));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let lines = diff
             .children
             .iter()
@@ -1105,7 +1143,7 @@ mod tests {
             ]
         }));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let changes = flatten_changes(&diff);
 
         assert!(
@@ -1137,7 +1175,7 @@ mod tests {
             }]
         }));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let route_stop = locate(
             &diff,
             "Lines[B932|Terminal].RouteStops[Origin]",
@@ -1173,7 +1211,7 @@ mod tests {
             }]
         }));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let route_stop = locate(
             &diff,
             "Lines[B932|Terminal].RouteStops[Origin]",
@@ -1209,7 +1247,7 @@ mod tests {
             }]
         }));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let route_stop = locate(
             &diff,
             "Lines[B932|Terminal].RouteStops[Origin]",
@@ -1249,7 +1287,7 @@ mod tests {
         let left = MetadataLoadResult::Error(CompareError::MissingStopPlateMetadata);
         let right = MetadataLoadResult::Parsed(json!({"StopName": "A"}));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let changes = flatten_changes(&diff);
         let error_node = changes
             .iter()
@@ -1290,7 +1328,7 @@ mod tests {
             }]
         }));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let changes = flatten_changes(&diff);
         assert!(
             changes.is_empty(),
@@ -1300,20 +1338,22 @@ mod tests {
 
     #[test]
     fn unmapped_alias_still_modifies() {
-        // "Airport" is not in the default equivalence map → real diff against "机场".
+        // "School" is not in the pinned default equivalence map → real diff
+        // against "学校". (Don't use a real-world alias like "Airport" here:
+        // users add those to compare-config.json over time.)
         let left = MetadataLoadResult::Parsed(json!({
             "Lines": [{
                 "LineName": "B932", "Direction": "Terminal",
-                "RouteStops": [{"Sequence": 1, "Name": "X", "BuildingType": "Airport"}]
+                "RouteStops": [{"Sequence": 1, "Name": "X", "BuildingType": "School"}]
             }]
         }));
         let right = MetadataLoadResult::Parsed(json!({
             "Lines": [{
                 "LineName": "B932", "Direction": "Terminal",
-                "RouteStops": [{"Sequence": 1, "Name": "X", "BuildingType": "机场"}]
+                "RouteStops": [{"Sequence": 1, "Name": "X", "BuildingType": "学校"}]
             }]
         }));
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let changes = flatten_changes(&diff);
         assert!(
             changes.iter().any(|n| {
@@ -1335,7 +1375,7 @@ mod tests {
         ];
 
         for (i, (left, right)) in cases.iter().enumerate() {
-            let diff = compare_metadata(
+            let diff = compare_with_defaults(
                 &MetadataLoadResult::Parsed(left.clone()),
                 &MetadataLoadResult::Parsed(right.clone()),
             );
@@ -1378,7 +1418,7 @@ mod tests {
             }]
         }));
 
-        let diff = compare_metadata(&left, &right);
+        let diff = compare_with_defaults(&left, &right);
         let changes = flatten_changes(&diff);
 
         assert!(

@@ -12,13 +12,7 @@
   "equivalence_maps": {
     "Lines[*].RouteStops[*].BuildingType": {
       "Metro": "地铁站",
-      "Hospital": "医院",
-      "Train": "火车站",
-      "PassengerStation": "客运站",
-      "Tram": "有轨电车",
-      "Wharf": "码头",
-      "Airport": "机场",
-      "School": "学校"
+      "Hospital": "医院"
     }
   }
 }

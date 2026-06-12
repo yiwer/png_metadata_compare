@@ -6,6 +6,13 @@ use crate::batch_report::{
     MatchStrategy, MatchedPair, PairingResult, UnmatchedFile, UnmatchedSide,
 };
 use crate::error::CompareError;
+use crate::pairing_key::canonical_pairing_key;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PairingKeyKind {
+    Canonical,
+    RawFileName,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 // Staged API for upcoming batch-compare wiring in later tasks.
@@ -70,14 +77,15 @@ pub fn scan_png_files_best_effort(root: &Path) -> BestEffortScanResult {
 #[allow(dead_code)]
 pub fn build_pairing(left: &[BatchFileRecord], right: &[BatchFileRecord]) -> PairingResult {
     let mut result = PairingResult::default();
-    let mut left_by_file_name = group_by_file_name(left);
-    let mut right_by_file_name = group_by_file_name(right);
+    let mut left_by_file_name = group_by_pairing_key(left);
+    let mut right_by_file_name = group_by_pairing_key(right);
     let mut file_names = BTreeSet::new();
 
     file_names.extend(left_by_file_name.keys().cloned());
     file_names.extend(right_by_file_name.keys().cloned());
 
     for file_name in file_names {
+        let key_kind = pairing_key_kind(&file_name);
         let left_group = left_by_file_name.remove(&file_name).unwrap_or_default();
         let right_group = right_by_file_name.remove(&file_name).unwrap_or_default();
         let display_file_name = display_file_name(&left_group, &right_group, &file_name);
@@ -87,7 +95,10 @@ pub fn build_pairing(left: &[BatchFileRecord], right: &[BatchFileRecord]) -> Pai
                 file_name: display_file_name.clone(),
                 left: left_group[0].clone(),
                 right: right_group[0].clone(),
-                match_strategy: MatchStrategy::FileName,
+                match_strategy: match key_kind {
+                    PairingKeyKind::Canonical => MatchStrategy::CanonicalStopId,
+                    PairingKeyKind::RawFileName => MatchStrategy::FileName,
+                },
             });
             continue;
         }
@@ -137,17 +148,28 @@ pub fn build_pairing(left: &[BatchFileRecord], right: &[BatchFileRecord]) -> Pai
     result
 }
 
-fn group_by_file_name(records: &[BatchFileRecord]) -> HashMap<String, Vec<BatchFileRecord>> {
+fn group_by_pairing_key(records: &[BatchFileRecord]) -> HashMap<String, Vec<BatchFileRecord>> {
     let mut groups = HashMap::new();
 
     for record in records {
-        groups
-            .entry(normalize_pairing_component(&record.file_name))
-            .or_insert_with(Vec::new)
-            .push(record.clone());
+        let key = canonical_pairing_key(&record.file_name)
+            .unwrap_or_else(|| normalize_pairing_component(&record.file_name));
+        groups.entry(key).or_insert_with(Vec::new).push(record.clone());
     }
 
     groups
+}
+
+fn pairing_key_kind(key: &str) -> PairingKeyKind {
+    // Canonical keys (bus-stop `站点名|方位|序号` and insert-strip
+    // `站点名|方位|插片<n>|序号`) always contain the `|` separator, which
+    // cannot appear in a normalized raw file name, so its presence is a
+    // sufficient discriminator.
+    if key.contains('|') {
+        PairingKeyKind::Canonical
+    } else {
+        PairingKeyKind::RawFileName
+    }
 }
 
 fn resolve_duplicate_file_name_group(
@@ -654,6 +676,98 @@ mod tests {
             assert_eq!(pairing.left_only.len(), 2);
             assert_eq!(pairing.right_only.len(), 2);
         }
+    }
+
+    #[test]
+    fn build_pairing_matches_cross_format_bus_stop_names_via_canonical_key() {
+        let left = vec![record("a/前进一路_新安公园地铁站_西_01_1350x2060_A.png")];
+        let right = vec![record("b/前进一路_新安公园地铁站_西_1_1350x2060_正.png")];
+
+        let pairing = build_pairing(&left, &right);
+        assert_eq!(pairing.matched.len(), 1);
+        assert_eq!(
+            pairing.matched[0].match_strategy,
+            MatchStrategy::CanonicalStopId
+        );
+        assert!(pairing.left_only.is_empty());
+        assert!(pairing.right_only.is_empty());
+    }
+
+    #[test]
+    fn build_pairing_matches_insert_strip_letter_to_numeral_via_canonical_key() {
+        let left = vec![record("a/平冠道_平冠道_东_195x920_C.png")];
+        let right = vec![record("b/平冠道_平冠道_东_三_001_195x920.png")];
+
+        let pairing = build_pairing(&left, &right);
+        assert_eq!(pairing.matched.len(), 1);
+        assert_eq!(
+            pairing.matched[0].match_strategy,
+            MatchStrategy::CanonicalStopId
+        );
+        assert!(pairing.left_only.is_empty());
+        assert!(pairing.right_only.is_empty());
+    }
+
+    #[test]
+    fn build_pairing_matches_rack_02_a_to_stop_03_zheng_via_canonical_key() {
+        let left = vec![record("a/R_S_北_02_W_A.png")];
+        let right = vec![record("b/R_S_北_3_W_正.png")];
+
+        let pairing = build_pairing(&left, &right);
+        assert_eq!(pairing.matched.len(), 1);
+        assert_eq!(
+            pairing.matched[0].match_strategy,
+            MatchStrategy::CanonicalStopId
+        );
+    }
+
+    #[test]
+    fn build_pairing_canonical_key_ignores_route_and_size_differences() {
+        let left = vec![record("a/路A_站_南_03_100x200_正.png")];
+        let right = vec![record("b/路B_站_南_03_999x999_正.png")];
+
+        let pairing = build_pairing(&left, &right);
+        assert_eq!(pairing.matched.len(), 1);
+        assert_eq!(
+            pairing.matched[0].match_strategy,
+            MatchStrategy::CanonicalStopId
+        );
+    }
+
+    #[test]
+    fn build_pairing_falls_back_to_file_name_when_canonical_parse_fails() {
+        // Both sides have an unparseable name (extra " (1)" copy suffix) — they
+        // share the exact same file name so the raw-name fallback still matches.
+        let left = vec![record("a/前进一路_新安公园地铁站_西_1_1350x2060_正 (1).png")];
+        let right = vec![record("b/前进一路_新安公园地铁站_西_1_1350x2060_正 (1).png")];
+
+        let pairing = build_pairing(&left, &right);
+        assert_eq!(pairing.matched.len(), 1);
+        assert_eq!(pairing.matched[0].match_strategy, MatchStrategy::FileName);
+    }
+
+    #[test]
+    fn build_pairing_does_not_match_parseable_to_unparseable_counterpart() {
+        let left = vec![record("a/前进一路_新安公园地铁站_西_01_1350x2060_A.png")];
+        // Right side is unparseable so it falls back to raw file name; the keys
+        // differ, so no match — matches the documented fallback contract.
+        let right = vec![record("b/前进一路_新安公园地铁站_西_1_1350x2060_正 (1).png")];
+
+        let pairing = build_pairing(&left, &right);
+        assert!(pairing.matched.is_empty());
+        assert_eq!(pairing.left_only.len(), 1);
+        assert_eq!(pairing.right_only.len(), 1);
+    }
+
+    #[test]
+    fn build_pairing_canonical_key_does_not_match_different_stop_numbers() {
+        let left = vec![record("a/R_S_北_01_W_A.png")]; // stop 01
+        let right = vec![record("b/R_S_北_01_W_B.png")]; // stop 02
+
+        let pairing = build_pairing(&left, &right);
+        assert!(pairing.matched.is_empty());
+        assert_eq!(pairing.left_only.len(), 1);
+        assert_eq!(pairing.right_only.len(), 1);
     }
 
     #[test]

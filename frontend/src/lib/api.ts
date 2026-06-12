@@ -1,9 +1,13 @@
-import { invoke } from '@tauri-apps/api/core';
-import type { DirectorySummary, PairInspection, Side, SideInspection } from './types';
+import { Channel, invoke } from '@tauri-apps/api/core';
+import type { DirectorySummary, PairInspection, ScanProgress, Side, SideInspection } from './types';
 
 export interface WorkbenchApi {
   compareSingle(leftPath: string, rightPath: string): Promise<PairInspection>;
-  scanDirectory(leftDir: string, rightDir: string): Promise<DirectorySummary>;
+  scanDirectory(
+    leftDir: string,
+    rightDir: string,
+    onProgress?: (progress: ScanProgress) => void,
+  ): Promise<DirectorySummary>;
   inspectSingle(path: string, side: Side): Promise<SideInspection>;
 }
 
@@ -14,10 +18,17 @@ export const workbenchApi: WorkbenchApi = {
       rightPath,
     });
   },
-  async scanDirectory(leftDir: string, rightDir: string): Promise<DirectorySummary> {
+  async scanDirectory(
+    leftDir: string,
+    rightDir: string,
+    onProgress?: (progress: ScanProgress) => void,
+  ): Promise<DirectorySummary> {
+    const channel = new Channel<ScanProgress>();
+    if (onProgress) channel.onmessage = onProgress;
     return invoke<DirectorySummary>('scan_directory', {
       leftDir,
       rightDir,
+      onProgress: channel,
     });
   },
   async inspectSingle(path: string, side: Side): Promise<SideInspection> {

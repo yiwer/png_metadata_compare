@@ -55,7 +55,7 @@ export interface PairInspection {
   default_selected_path: string | null;
 }
 
-export type MatchStrategy = 'file_name' | 'file_name_and_parent_dir';
+export type MatchStrategy = 'file_name' | 'file_name_and_parent_dir' | 'canonical_stop_id';
 
 export type BatchListItemKind =
   | 'identical'
@@ -86,6 +86,14 @@ export interface BatchListItem {
 export interface DirectorySummary {
   counts: BatchCounts;
   items: BatchListItem[];
+}
+
+export type ScanStage = 'scanning' | 'comparing';
+
+export interface ScanProgress {
+  stage: ScanStage;
+  done: number;
+  total: number;
 }
 
 export type WorkbenchMode = 'single' | 'directory';
