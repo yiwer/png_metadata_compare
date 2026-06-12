@@ -61,6 +61,20 @@ pub async fn inspect_single(path: String, side: String) -> Result<SideInspection
     run_blocking(move || inspect_single_side(Path::new(&path), parsed_side)).await
 }
 
+/// 在阻塞线程池上跑文件夹选择器，避免占住主线程导致 webview 卡顿
+/// （用户报告：600 张大 PNG 的目录上点「浏览」明显卡顿）。
+/// rfd 在调用线程上自行初始化 COM（STA）。代价：对话框不以主窗口为
+/// parent，可能被遮挡 —— 换取主线程全程不被对话框消息循环占用。
+#[tauri::command]
+pub async fn pick_folder() -> Result<Option<String>, String> {
+    run_blocking(|| {
+        rfd::FileDialog::new()
+            .pick_folder()
+            .map(|p| p.display().to_string())
+    })
+    .await
+}
+
 async fn run_blocking<T, F>(task: F) -> Result<T, String>
 where
     T: Send + 'static,

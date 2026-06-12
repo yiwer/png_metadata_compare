@@ -4,6 +4,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openPath } from '@tauri-apps/plugin-opener';
+import { workbenchApi } from './lib/api';
 import { Sidebar } from './components/Sidebar';
 import { UnifiedTree } from './components/UnifiedTree';
 import type { FocusRequest } from './components/UnifiedTree';
@@ -18,10 +19,17 @@ const win = getCurrentWindow();
 const RAIL_AUTO_COLLAPSE_WIDTH = 1000;
 
 async function pickPath(directory: boolean): Promise<string> {
+  if (directory) {
+    // T9 instrumentation — T11 实测记录后移除
+    const t0 = performance.now();
+    const selected = await workbenchApi.pickFolder?.();
+    console.log(`[pick] rust pick_folder round-trip ${Math.round(performance.now() - t0)}ms`);
+    return selected ?? '';
+  }
   const selected = await open({
-    directory,
+    directory: false,
     multiple: false,
-    filters: directory ? undefined : [{ name: 'PNG', extensions: ['png'] }],
+    filters: [{ name: 'PNG', extensions: ['png'] }],
   });
   return typeof selected === 'string' ? selected : '';
 }

@@ -10,6 +10,7 @@ export interface WorkbenchApi {
   ): Promise<DirectorySummary>;
   inspectSingle(path: string, side: Side): Promise<SideInspection>;
   cancelScan(): Promise<void>;
+  pickFolder?(): Promise<string | null>;
 }
 
 export const workbenchApi: WorkbenchApi = {
@@ -40,5 +41,8 @@ export const workbenchApi: WorkbenchApi = {
   },
   async cancelScan(): Promise<void> {
     await invoke('cancel_scan');
+  },
+  async pickFolder(): Promise<string | null> {
+    return invoke<string | null>('pick_folder');
   },
 };

@@ -30,6 +30,7 @@ vi.mock('./lib/api', () => ({
     inspectSingle: vi.fn().mockResolvedValue({
       side: 'left', file_path: '/x.png', file_name: 'x.png', raw_json: null, metadata: null, error: null,
     }),
+    pickFolder: vi.fn().mockResolvedValue(null),
   },
 }));
 
@@ -64,7 +65,7 @@ function summaryOf(items: BatchListItem[]): DirectorySummary {
 
 /** 切到目录模式并通过两次「浏览」把 /L、/R 填入，触发自动扫描。 */
 async function setupDirectoryScan() {
-  vi.mocked(open).mockResolvedValueOnce('/L').mockResolvedValueOnce('/R');
+  vi.mocked(workbenchApi.pickFolder!).mockResolvedValueOnce('/L').mockResolvedValueOnce('/R');
   render(<App />);
   fireEvent.click(screen.getByText('目录'));
   // WelcomePane 在加载期间会卸载重挂，所以每次点击前重新查询按钮

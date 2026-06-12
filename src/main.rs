@@ -10,7 +10,8 @@ fn main() {
             desktop_api::compare_single,
             desktop_api::scan_directory,
             desktop_api::inspect_single,
-            desktop_api::cancel_scan
+            desktop_api::cancel_scan,
+            desktop_api::pick_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
