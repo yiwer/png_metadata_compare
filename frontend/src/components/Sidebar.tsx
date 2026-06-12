@@ -1,6 +1,7 @@
 // frontend/src/components/Sidebar.tsx
 import { memo, useEffect, useRef, useState } from 'react';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
+import { loadRecent } from '../lib/recentDirs';
 import type { ActiveFilter, SortKey } from '../features/workbench/useWorkbench';
 import type { BatchListItem, BatchListItemKind, DirectorySummary, ScanProgress } from '../lib/types';
 
@@ -28,6 +29,7 @@ export function Sidebar({
   leftDir, rightDir, summary, filteredItems, activeFilter, searchQuery, sortKey,
   selectedItemId, isLoading, scanProgress,
   onFilter, onSearch, onSort, onSelect, onPickLeft, onPickRight, onCancelScan,
+  onApplyPair, onPastePath,
 }: {
   leftDir: string;
   rightDir: string;
@@ -46,9 +48,12 @@ export function Sidebar({
   onPickLeft(): void;
   onPickRight(): void;
   onCancelScan(): void;
+  onApplyPair(left: string, right: string): void;
+  onPastePath(side: 'left' | 'right', path: string): void;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; item: BatchListItem } | null>(null);
+  const [pickMenu, setPickMenu] = useState<'left' | 'right' | null>(null);
 
   // Ctrl+F 经全局事件聚焦搜索框
   useEffect(() => {
@@ -83,8 +88,26 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar__slots">
-        <DirChip side="左" path={leftDir} onPick={onPickLeft} />
-        <DirChip side="右" path={rightDir} onPick={onPickRight} />
+        <DirChip label="左" path={leftDir} onOpen={() => setPickMenu(pickMenu === 'left' ? null : 'left')} />
+        <DirChip label="右" path={rightDir} onOpen={() => setPickMenu(pickMenu === 'right' ? null : 'right')} />
+        {pickMenu && (
+          <div className="sidebar__pickmenu">
+            <button type="button" onClick={() => { (pickMenu === 'left' ? onPickLeft : onPickRight)(); setPickMenu(null); }}>浏览…</button>
+            <input type="text" placeholder="粘贴路径后回车"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const v = (e.target as HTMLInputElement).value.trim();
+                  if (v) { onPastePath(pickMenu, v); setPickMenu(null); }
+                } else if (e.key === 'Escape') setPickMenu(null);
+              }} />
+            {loadRecent('dir').map((p) => (
+              <button key={`${p.left}|${p.right}`} type="button" title={`${p.left}\n${p.right}`}
+                onClick={() => { onApplyPair(p.left, p.right); setPickMenu(null); }}>
+                {basename(p.left)} ⇄ {basename(p.right)}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="sidebar__search">
@@ -162,11 +185,11 @@ export function Sidebar({
   );
 }
 
-function DirChip({ side, path, onPick }: { side: string; path: string; onPick(): void }) {
+function DirChip({ label, path, onOpen }: { label: string; path: string; onOpen(): void }) {
   return (
     <div className="sidebar__slot">
-      <span className="sidebar__slot-side">{side}</span>
-      <button type="button" className="sidebar__slot-path" title={path || '未选择'} onClick={onPick}>
+      <span className="sidebar__slot-side">{label}</span>
+      <button type="button" className="sidebar__slot-path" title={path || '未选择'} onClick={onOpen}>
         {path ? `…\\${basename(path)}` : '选择目录'}
       </button>
     </div>

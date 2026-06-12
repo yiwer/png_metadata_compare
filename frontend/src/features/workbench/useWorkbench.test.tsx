@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useWorkbench } from './useWorkbench';
 import type { WorkbenchApi } from '../../lib/api';
 import type { PairInspection, DirectorySummary } from '../../lib/types';
+import { loadRecent } from '../../lib/recentDirs';
 
 const mockInspection: PairInspection = {
   left: { side: 'left', file_path: '/a.png', file_name: 'a.png', raw_json: null, metadata: null, error: null },
@@ -391,5 +392,26 @@ describe('sidebar selection & search (redesign)', () => {
     await act(async () => { await result.current.runCompare(); });
     // b.png 是 summary 中第 2 个 different 项
     expect(result.current.directoryContext).toEqual({ index: 2, totalDifferent: 2 });
+  });
+});
+
+describe('MRU writes', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('writes dir pair after successful scan', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
+    await act(async () => { await result.current.runCompare(); });
+    expect(loadRecent('dir')).toMatchObject([{ left: '/left', right: '/right' }]);
+  });
+
+  it('writes file pair after successful single compare', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setLeftInput('/a.png'); result.current.setRightInput('/b.png'); });
+    await act(async () => { await result.current.runCompare(); });
+    expect(loadRecent('file')).toMatchObject([{ left: '/a.png', right: '/b.png' }]);
   });
 });

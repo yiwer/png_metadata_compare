@@ -801,3 +801,29 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 .sidebar__menu { position: fixed; z-index: 20; background: var(--bg-elevated); border: 1px solid var(--border-emph); border-radius: var(--r-md); padding: 4px; display: flex; flex-direction: column; min-width: 160px; }
 .sidebar__menu button { text-align: left; border: none; background: none; color: var(--text-secondary); font: var(--fs-sm)/1.8 var(--font-ui); padding: 2px 10px; border-radius: var(--r-sm); cursor: pointer; }
 .sidebar__menu button:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+/* ============ WelcomePane ============ */
+.welcome2 { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-5); height: 100%; padding: var(--sp-6); }
+.welcome2__title { font: 500 var(--fs-2xl)/var(--lh-2xl) var(--font-ui); color: var(--text-primary); }
+.welcome2__noun { color: var(--text-secondary); font: var(--fs-md)/var(--lh-md) var(--font-ui); }
+.welcome2__slots { display: flex; gap: var(--sp-4); width: min(720px, 90%); }
+.welcome2__slot { flex: 1; border: 1px dashed var(--border-emph); border-radius: var(--r-md); padding: var(--sp-5); display: flex; gap: 8px; align-items: center; justify-content: center; color: var(--text-secondary); font: var(--fs-md)/var(--lh-md) var(--font-ui); }
+.welcome2__slot button { border: 1px solid var(--border-default); background: var(--bg-elevated); color: var(--text-primary); border-radius: var(--r-sm); padding: 3px 12px; cursor: pointer; }
+.welcome2__slot button:hover { border-color: var(--accent); }
+.welcome2__recent { width: min(560px, 90%); display: flex; flex-direction: column; gap: 2px; }
+.welcome2__recent-title { color: var(--text-tertiary); font: var(--fs-xs)/var(--lh-xs) var(--font-ui); margin-bottom: 4px; }
+.welcome2__recent-row { display: flex; align-items: center; gap: 4px; }
+.welcome2__recent-main { flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 12px; border: none; background: none; color: var(--text-secondary); font: var(--fs-sm)/1.9 var(--font-mono); padding: 2px 10px; border-radius: var(--r-sm); cursor: pointer; }
+.welcome2__recent-main:hover { background: var(--bg-hover); color: var(--text-primary); }
+.welcome2__recent-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.welcome2__recent-time { flex: none; color: var(--text-tertiary); }
+.welcome2__recent-del { border: none; background: none; color: var(--text-tertiary); cursor: pointer; }
+.welcome2__recent-del:hover { color: var(--rem-text); }
+.welcome2__hint { color: var(--text-tertiary); font: var(--fs-sm)/2 var(--font-ui); }
+.welcome2__hint kbd { background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: var(--r-sm); padding: 0 5px; font-family: var(--font-mono); }
+
+/* ============ Sidebar pick-menu ============ */
+.sidebar__pickmenu { position: absolute; top: 60px; left: 8px; right: 8px; z-index: 15; background: var(--bg-elevated); border: 1px solid var(--border-emph); border-radius: var(--r-md); padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+.sidebar__pickmenu button { text-align: left; border: none; background: none; color: var(--text-secondary); font: var(--fs-sm)/1.9 var(--font-mono); padding: 2px 8px; border-radius: var(--r-sm); cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sidebar__pickmenu button:hover { background: var(--bg-hover); color: var(--text-primary); }
+.sidebar__pickmenu input { background: var(--bg-page); border: 1px solid var(--border-default); border-radius: var(--r-sm); color: var(--text-primary); font: var(--fs-sm)/1.6 var(--font-mono); padding: 3px 8px; }

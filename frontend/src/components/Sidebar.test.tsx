@@ -1,7 +1,8 @@
 // frontend/src/components/Sidebar.test.tsx
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Sidebar } from './Sidebar';
+import { touchRecent } from '../lib/recentDirs';
 import type { BatchListItem, DirectorySummary } from '../lib/types';
 
 const items: BatchListItem[] = [
@@ -21,6 +22,7 @@ function renderBar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
     selectedItemId: '1', isLoading: false, scanProgress: null,
     onFilter: vi.fn(), onSearch: vi.fn(), onSort: vi.fn(), onSelect: vi.fn(),
     onPickLeft: vi.fn(), onPickRight: vi.fn(), onCancelScan: vi.fn(),
+    onApplyPair: vi.fn(), onPastePath: vi.fn(),
     ...over,
   };
   render(<Sidebar {...props} />);
@@ -28,6 +30,7 @@ function renderBar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
 }
 
 describe('Sidebar', () => {
+  beforeEach(() => localStorage.clear());
   it('renders rows and marks the selected one', () => {
     renderBar();
     expect(screen.getByText('a.png').closest('.sidebar__row')).toHaveAttribute('data-selected', 'true');
@@ -63,5 +66,22 @@ describe('Sidebar', () => {
     const p = renderBar({ filteredItems: [], searchQuery: 'zzz' });
     fireEvent.click(screen.getByRole('button', { name: '清空搜索' }));
     expect(p.onSearch).toHaveBeenCalledWith('');
+  });
+
+  it('dir chip opens a menu with recent pairs and applies one', () => {
+    touchRecent('dir', 'C:/x1', 'C:/x2');
+    const p = renderBar();
+    fireEvent.click(screen.getByTitle('C:/tmp/bim_v1'));
+    fireEvent.click(screen.getByText(/x1 ⇄ x2/));
+    expect(p.onApplyPair).toHaveBeenCalledWith('C:/x1', 'C:/x2');
+  });
+
+  it('pasting a path + Enter calls onPastePath for that side', () => {
+    const p = renderBar();
+    fireEvent.click(screen.getByTitle('C:/tmp/bim_v1'));
+    const input = screen.getByPlaceholderText('粘贴路径后回车');
+    fireEvent.change(input, { target: { value: 'D:/new' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(p.onPastePath).toHaveBeenCalledWith('left', 'D:/new');
   });
 });

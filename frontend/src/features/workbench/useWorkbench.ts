@@ -1,6 +1,7 @@
 // frontend/src/features/workbench/useWorkbench.ts
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { workbenchApi } from '../../lib/api';
+import { touchRecent } from '../../lib/recentDirs';
 import type {
   BatchListItem,
   BatchListItemKind,
@@ -264,6 +265,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
           setView('mirror');
           setViewMode('tree');
           setSlotBarCollapsed(true);
+          touchRecent('file', left, right);
         } else if (left || right) {
           const target = left || right;
           const side: Side = left ? 'left' : 'right';
@@ -295,6 +297,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
         setDirectoryContext(null);
         setView('directory-overview');
         setSlotBarCollapsed(true);
+        touchRecent('dir', left, right);
         const defaultFilter: ActiveFilter = summary.counts.different > 0 ? 'different' : 'all';
         setActiveFilter(defaultFilter);
         setSearchQuery('');
