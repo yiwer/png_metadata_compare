@@ -227,10 +227,8 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   const selectNext = useCallback(async () => { await selectByOffset(1); }, [selectByOffset]);
   const selectPrev = useCallback(async () => { await selectByOffset(-1); }, [selectByOffset]);
 
-  // Task 8 之前后端还没有 cancel_scan 命令，这里先落桩：
-  // api.cancelScan 是可选成员，缺省时本函数是 no-op。
   const cancelScan = useCallback(async () => {
-    try { await api.cancelScan?.(); } catch { /* 后端未实现/未启动时静默 */ }
+    try { await api.cancelScan(); } catch (err) { console.warn('cancel_scan failed', err); }
   }, [api]);
 
   async function runAuto() {
@@ -291,7 +289,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     } catch (err) {
       if (scanSeqRef.current === runId) {
         const msg = formatError(err);
-        if (msg.includes('cancelled')) {
+        if (msg === 'cancelled') {
           setView('welcome');
           setDirectorySummary(null);
           setSelectedItemId(null);

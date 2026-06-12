@@ -112,6 +112,9 @@ pub fn inspect_single_side(path: &Path, side: UnmatchedSide) -> SideInspection {
 }
 
 /// Scanning was cancelled by the caller's `should_cancel` hook.
+///
+/// `should_cancel` 应当是粘性的（一旦返回 `true` 不再返回 `false`）。
+/// 非粘性时实现保证不 panic、按取消处理。
 #[derive(Debug, PartialEq, Eq)]
 pub struct ScanCancelled;
 
@@ -119,6 +122,8 @@ pub fn scan_directory_summary(left_dir: &Path, right_dir: &Path) -> DirectorySum
     scan_directory_summary_with_progress(left_dir, right_dir, |_| {})
 }
 
+/// `should_cancel` 应当是粘性的（一旦返回 `true` 不再返回 `false`）。
+/// 非粘性时实现保证不 panic、按取消处理。
 pub fn scan_directory_summary_cancellable<F, C>(
     left_dir: &Path,
     right_dir: &Path,
@@ -135,7 +140,13 @@ where
         total: 0,
     });
     let left_scan = scan_png_files_best_effort(left_dir);
+    if should_cancel() {
+        return Err(ScanCancelled);
+    }
     let right_scan = scan_png_files_best_effort(right_dir);
+    if should_cancel() {
+        return Err(ScanCancelled);
+    }
     let mut counts = BatchCounts::default();
     let mut items = Vec::new();
     let mut pairing = crate::batch_scan::build_pairing(&left_scan.files, &right_scan.files);
@@ -162,12 +173,12 @@ where
         });
     }, &should_cancel);
 
-    if should_cancel() {
+    if should_cancel() || summaries.iter().any(|s| s.is_none()) {
         return Err(ScanCancelled);
     }
 
     for (pair, diff_summary_opt) in pairs.into_iter().zip(summaries) {
-        let diff_summary = diff_summary_opt.expect("non-cancelled scan compares every pair");
+        let diff_summary = diff_summary_opt.expect("active scan compares every pair");
         let difference_count = diff_summary.total();
         let kind = if difference_count == 0 {
             counts.identical += 1;
@@ -722,5 +733,26 @@ mod tests {
             scan_directory_summary_cancellable(fixture.left_dir(), fixture.right_dir(), |_p| {}, || false)
                 .expect("not cancelled");
         assert_eq!(result, scan_directory_summary(fixture.left_dir(), fixture.right_dir()));
+    }
+
+    #[test]
+    fn cancellable_scan_cancelled_midway_discards_partial_results() {
+        let fixture = BatchFixture::new("cancel_midway");
+        for i in 0..6 {
+            let name = format!("m{i}.png");
+            fixture.write_left_png(&name, "shared", r#"{"Title":"L"}"#);
+            fixture.write_right_png(&name, "shared", r#"{"Title":"R"}"#);
+        }
+
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        // 粘性条件（>=）：一旦为真永远为真 —— 这是 should_cancel 的契约
+        let result = scan_directory_summary_cancellable(
+            fixture.left_dir(),
+            fixture.right_dir(),
+            |_p| {},
+            || calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= 3,
+        );
+
+        assert!(matches!(result, Err(ScanCancelled)));
     }
 }
