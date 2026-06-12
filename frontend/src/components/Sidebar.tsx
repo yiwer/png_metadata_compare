@@ -159,14 +159,16 @@ export function Sidebar({
         </div>
       )}
 
+      {counts && counts.different === 0 && totalPairs > 0 && !isLoading && (
+        <div className="sidebar__allsame">两侧完全一致</div>
+      )}
+
       <div className="sidebar__rows">
         {filteredItems.length === 0 && !isLoading && (
           <div className="sidebar__empty">
             {searchQuery
               ? <><span>无匹配</span> <button type="button" onClick={() => onSearch('')}>清空搜索</button></>
-              : counts && counts.different === 0 && activeFilter === 'all' && totalPairs > 0 && summary?.items.every((i) => i.kind === 'identical')
-                ? '两侧完全一致'
-                : '无条目'}
+              : '无条目'}
           </div>
         )}
         {filteredItems.map((item) => (

@@ -156,9 +156,8 @@ function Leaf({ row, level, highlight, solo }: { row: MirrorRow; level: number; 
   const showLeft = solo === null || solo === 'left';
   const showRight = solo === null || solo === 'right';
   return (
-    <div className={`utree__cols utree__row ${statusCls}`.trim()} data-path={row.path} data-solo={solo ?? undefined}
-      style={{ paddingLeft: 10 + level * 16 }}>
-      <span className="utree__key">
+    <div className={`utree__cols utree__row ${statusCls}`.trim()} data-path={row.path} data-solo={solo ?? undefined}>
+      <span className="utree__key" style={{ paddingLeft: 10 + level * 16 }}>
         {row.label}
         {row.isUnknown && <span className="utree__unknown">未识别</span>}
       </span>

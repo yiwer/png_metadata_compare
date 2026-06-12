@@ -70,9 +70,25 @@ describe('useWorkbench', () => {
     act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
     await act(async () => { await result.current.runCompare(); });
     expect(api.scanDirectory).toHaveBeenCalledWith('/left', '/right', expect.any(Function));
-    // auto-select fires on first different item, so view advances to 'mirror'
+    // 扫描后 view 由自动选中决定：首个 different 项是 pair → mirror
     expect(result.current.directorySummary).toBe(mockSummary);
     expect(result.current.selectedItemId).not.toBeNull();
+    expect(result.current.view).toBe('mirror');
+  });
+
+  it('scan with no items falls back to welcome view', async () => {
+    const api = makeApi({
+      scanDirectory: vi.fn().mockResolvedValue({
+        counts: { identical: 0, different: 0, left_only: 0, right_only: 0, error: 0 },
+        items: [],
+      }),
+    });
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
+    await act(async () => { await result.current.runCompare(); });
+    expect(result.current.view).toBe('welcome');
+    expect(result.current.directorySummary).not.toBeNull();
   });
 
   it('exposes scan progress while a directory scan runs and clears it after', async () => {
@@ -115,7 +131,7 @@ describe('useWorkbench', () => {
     expect(result.current.filteredItems).toHaveLength(1);
   });
 
-  it('navigateToPair sets directoryContext index among different items', async () => {
+  it('navigateToPair opens a pair item in mirror view and marks it selected', async () => {
     const api = makeApi();
     const { result } = renderHook(() => useWorkbench(api));
     act(() => { result.current.setMode('directory'); });
@@ -124,20 +140,9 @@ describe('useWorkbench', () => {
     await act(async () => {
       await result.current.navigateToPair(mockSummary.items[1]); // second 'different' item
     });
-    expect(result.current.directoryContext).toEqual({ index: 2, totalDifferent: 2 });
+    expect(api.compareSingle).toHaveBeenCalledWith('/l/b.png', '/r/b.png');
+    expect(result.current.selectedItemId).toBe('2');
     expect(result.current.view).toBe('mirror');
-  });
-
-  it('goBackToDirectory resets view and pairResult', async () => {
-    const api = makeApi();
-    const { result } = renderHook(() => useWorkbench(api));
-    act(() => { result.current.setMode('directory'); });
-    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
-    await act(async () => { await result.current.runCompare(); });
-    await act(async () => { await result.current.navigateToPair(mockSummary.items[0]); });
-    act(() => { result.current.goBackToDirectory(); });
-    expect(result.current.view).toBe('directory-overview');
-    expect(result.current.pairResult).toBeNull();
   });
 
   it('runCompare sets error on failure', async () => {
@@ -190,9 +195,10 @@ describe('useWorkbench', () => {
     act(() => { result.current.setMode('directory'); });
     act(() => { result.current.setLeftInput('/L'); result.current.setRightInput('/R'); });
     await act(async () => { await result.current.runAuto(); });
-    // auto-select fires, advancing view past directory-overview
+    // auto-select fires; the selected pair determines the view
     expect(result.current.directorySummary).toBe(mockSummary);
     expect(result.current.selectedItemId).not.toBeNull();
+    expect(result.current.view).toBe('mirror');
   });
 
   it('tryDropPath: dropping .png while in directory mode auto-switches to single', () => {
@@ -210,24 +216,6 @@ describe('useWorkbench', () => {
     expect(result.current.mode).toBe('directory');
     expect(result.current.rightInput).toBe('/some/folder');
     expect(result.current.toast).toMatch(/已切换到目录模式/);
-  });
-
-  it('slot bar collapses after first successful analysis with both filled', async () => {
-    const api = makeApi();
-    const { result } = renderHook(() => useWorkbench(api));
-    act(() => { result.current.setLeftInput('/a.png'); result.current.setRightInput('/b.png'); });
-    expect(result.current.slotBarCollapsed).toBe(false);
-    await act(async () => { await result.current.runAuto(); });
-    expect(result.current.slotBarCollapsed).toBe(true);
-  });
-
-  it('slot bar stays expanded when only one side is filled (solo view)', async () => {
-    const api = makeApi();
-    const { result } = renderHook(() => useWorkbench(api));
-    act(() => { result.current.setLeftInput('/a.png'); });
-    await act(async () => { await result.current.runAuto(); });
-    expect(result.current.view).toBe('solo');
-    expect(result.current.slotBarCollapsed).toBe(false);
   });
 
   it('navigateToPair: left_only item → solo left', async () => {
@@ -248,26 +236,6 @@ describe('useWorkbench', () => {
     expect(api.inspectSingle).toHaveBeenCalledWith('/L/x.png', 'left');
     expect(result.current.view).toBe('solo');
     expect(result.current.soloSide).toBe('left');
-  });
-
-  it('navigateToPair: left_only sets inDirectorySubview true; goBack clears it', async () => {
-    const onlyLeft = {
-      id: 'L', kind: 'left_only' as const, label: 'x.png',
-      left_path: '/L/x.png', right_path: null, difference_count: 0,
-      match_strategy: 'file_name' as const, message: null,
-    };
-    const sideInspection = {
-      side: 'left' as const, file_path: '/L/x.png', file_name: 'x.png',
-      raw_json: null, metadata: { Foo: 'bar' }, error: null,
-    };
-    const api = makeApi({ inspectSingle: vi.fn().mockResolvedValue(sideInspection) });
-    const { result } = renderHook(() => useWorkbench(api));
-    act(() => { result.current.setMode('directory'); });
-    await act(async () => { await result.current.runCompare(); });
-    await act(async () => { await result.current.navigateToPair(onlyLeft as any); });
-    expect(result.current.inDirectorySubview).toBe(true);
-    act(() => { result.current.goBackToDirectory(); });
-    expect(result.current.inDirectorySubview).toBe(false);
   });
 
   it('navigateToPair: surfaces error when paths are missing', async () => {
@@ -346,7 +314,7 @@ describe('sidebar selection & search (redesign)', () => {
     expect(result.current.activeFilter).toBe('all');
   });
 
-  it('selecting an error item exposes errorItem without calling compare', async () => {
+  it('selecting an error item exposes errorItem and the error view without calling compare', async () => {
     const api = makeApi({
       scanDirectory: vi.fn().mockResolvedValue({
         counts: { identical: 0, different: 0, left_only: 0, right_only: 0, error: 1 },
@@ -358,6 +326,7 @@ describe('sidebar selection & search (redesign)', () => {
     act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
     await act(async () => { await result.current.runCompare(); });
     expect(result.current.errorItem?.id).toBe('e1');
+    expect(result.current.view).toBe('error');
     expect(api.compareSingle).not.toHaveBeenCalled();
   });
 
@@ -382,16 +351,6 @@ describe('sidebar selection & search (redesign)', () => {
     expect(result.current.isLoading).toBe(true);
     await act(async () => { resolvers[1](mockInspection); await secondRun; await firstRun; });
     expect(result.current.pairResult).toBe(mockInspection);
-  });
-
-  it('auto-select computes directoryContext from the fresh summary', async () => {
-    const api = makeApi();
-    const { result } = renderHook(() => useWorkbench(api));
-    act(() => { result.current.setMode('directory'); });
-    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
-    await act(async () => { await result.current.runCompare(); });
-    // b.png 是 summary 中第 2 个 different 项
-    expect(result.current.directoryContext).toEqual({ index: 2, totalDifferent: 2 });
   });
 });
 

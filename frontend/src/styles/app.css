@@ -30,10 +30,10 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 ::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--border-emph); }
 
-/* App shell */
+/* App shell — 顶栏 + 主体两段 */
 .app-shell {
-  display: grid;
-  grid-template-rows: 44px auto auto 1fr;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
   background: var(--bg-page);
 }
@@ -42,6 +42,8 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 .topbar {
   display: flex;
   align-items: center;
+  height: 44px;
+  flex: none;
   padding: 0 var(--sp-3);
   background: var(--bg-topbar);
   background-image:
@@ -713,7 +715,7 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 .utree__head { padding: 6px 10px; border-bottom: 1px solid var(--border-default); color: var(--text-tertiary); font: var(--fs-xs)/var(--lh-xs) var(--font-mono); position: sticky; top: 0; background: var(--bg-page); z-index: 1; }
 .utree__col-side { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .utree__body { overflow-y: auto; flex: 1; padding-bottom: var(--sp-5); }
-.utree__nested { border-left: 1px solid var(--border-subtle); margin-left: 10px; content-visibility: auto; contain-intrinsic-size: auto 600px; }
+.utree__nested { border-left: 1px solid var(--border-subtle); content-visibility: auto; contain-intrinsic-size: auto 600px; }
 .utree__row { padding-top: 4px; padding-bottom: 4px; padding-right: 10px; border-radius: var(--r-sm); font: var(--fs-md)/var(--lh-md) var(--font-mono); }
 .utree__key { color: var(--text-secondary); }
 .utree__val { color: var(--text-primary); word-break: break-all; position: relative; }
@@ -827,3 +829,29 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 .sidebar__pickmenu button { text-align: left; border: none; background: none; color: var(--text-secondary); font: var(--fs-sm)/1.9 var(--font-mono); padding: 2px 8px; border-radius: var(--r-sm); cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .sidebar__pickmenu button:hover { background: var(--bg-hover); color: var(--text-primary); }
 .sidebar__pickmenu input { background: var(--bg-page); border: 1px solid var(--border-default); border-radius: var(--r-sm); color: var(--text-primary); font: var(--fs-sm)/1.6 var(--font-mono); padding: 3px 8px; }
+
+/* ============ 三栏骨架 / 详情头部 / 错误卡 ============ */
+.shell-body { display: flex; flex: 1; min-height: 0; }
+.center { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-page); }
+.topbar-collapse { border: none; background: none; color: var(--text-tertiary); cursor: pointer; font-size: var(--fs-md); }
+.topbar-collapse:hover { color: var(--accent); }
+.detail-head { display: flex; align-items: center; gap: var(--sp-2); padding: 6px 10px; border-bottom: 1px solid var(--border-subtle); }
+.detail-head__seg { display: flex; border: 1px solid var(--border-default); border-radius: var(--r-sm); overflow: hidden; }
+.detail-head__seg button { border: none; background: none; color: var(--text-secondary); font: var(--fs-sm)/1.6 var(--font-ui); padding: 2px 10px; cursor: pointer; }
+.detail-head__seg button[data-active="true"] { background: var(--accent-bg); color: var(--text-primary); }
+.detail-head__btn { border: 1px solid var(--border-default); background: none; color: var(--text-secondary); border-radius: var(--r-sm); font: var(--fs-sm)/1.6 var(--font-ui); padding: 2px 10px; cursor: pointer; }
+.detail-head__btn[data-active="true"] { background: var(--accent-bg); color: var(--text-primary); border-color: transparent; }
+.detail-head__name { color: var(--text-secondary); font: var(--fs-sm)/1.6 var(--font-mono); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 40%; }
+.detail-head__spacer { flex: 1; }
+.detail-head__chips { display: flex; gap: 4px; }
+.detail-head__chips button { border: 1px solid var(--border-subtle); background: var(--bg-elevated); color: var(--text-secondary); border-radius: var(--r-sm); font: var(--fs-xs)/1.6 var(--font-mono); padding: 1px 8px; cursor: pointer; max-width: 180px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.detail-head__hint { color: var(--text-tertiary); font: var(--fs-xs)/var(--lh-xs) var(--font-ui); }
+.raw-json--solo { width: 100%; }
+.error-card { margin: var(--sp-6) auto; max-width: 560px; background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: var(--r-md); padding: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-2); }
+.error-card__title { color: var(--err-text); font: 500 var(--fs-lg)/var(--lh-lg) var(--font-ui); }
+.error-card__path { color: var(--text-secondary); font: var(--fs-sm)/var(--lh-sm) var(--font-mono); word-break: break-all; }
+.error-card__msg { color: var(--text-tertiary); font: var(--fs-sm)/var(--lh-sm) var(--font-mono); }
+.error-card__open { align-self: flex-start; border: 1px solid var(--border-default); background: none; color: var(--text-secondary); border-radius: var(--r-sm); padding: 4px 12px; cursor: pointer; }
+.error-card__open:hover { border-color: var(--accent); color: var(--accent); }
+.image-pane__broken { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-tertiary); font: var(--fs-sm)/1 var(--font-ui); }
+.sidebar__allsame { margin: 4px 8px; padding: 4px 8px; border-radius: var(--r-sm); background: var(--add-bg); color: var(--add-text); font: var(--fs-xs)/var(--lh-xs) var(--font-ui); }

@@ -13,16 +13,11 @@ import type {
 } from '../../lib/types';
 import type { WorkbenchApi } from '../../lib/api';
 
-export type AppView = 'welcome' | 'solo' | 'mirror' | 'directory-overview';
+export type AppView = 'welcome' | 'solo' | 'mirror' | 'error';
 export type ViewMode = 'tree' | 'json' | 'image';
 export type ActiveFilter = 'all' | BatchListItemKind;
 export type Side = 'left' | 'right';
 export type SortKey = 'diff-desc' | 'name-asc';
-
-export interface DirectoryContext {
-  index: number;
-  totalDifferent: number;
-}
 
 type ModeInputs = Record<WorkbenchMode, { left: string; right: string }>;
 
@@ -62,15 +57,10 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   const [pairResult, setPairResult] = useState<PairInspection | null>(null);
   const [soloResult, setSoloResult] = useState<SideInspection | null>(null);
   const [soloSide, setSoloSide] = useState<Side | null>(null);
-  const [directoryContext, setDirectoryContext] = useState<DirectoryContext | null>(null);
-
-  const [inDirectorySubview, setInDirectorySubview] = useState<boolean>(false);
 
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [diffHighlight, setDiffHighlight] = useState(true);
   const [onlyDiff, setOnlyDiff] = useState(false);
-
-  const [slotBarCollapsed, setSlotBarCollapsed] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
@@ -108,11 +98,8 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     setPairResult(null);
     setSoloResult(null);
     setSoloSide(null);
-    setDirectoryContext(null);
     setActiveFilter('different');
     setError(null);
-    setSlotBarCollapsed(false);
-    setInDirectorySubview(false);
     setSearchQuery('');
     setSelectedItemId(null);
     setErrorItem(null);
@@ -120,11 +107,9 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
 
   function setLeftInput(value: string) {
     setInputsByMode((cur) => ({ ...cur, [mode]: { ...cur[mode], left: value } }));
-    setSlotBarCollapsed(false);
   }
   function setRightInput(value: string) {
     setInputsByMode((cur) => ({ ...cur, [mode]: { ...cur[mode], right: value } }));
-    setSlotBarCollapsed(false);
   }
 
   function tryDropPath(side: Side, path: string) {
@@ -137,9 +122,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
       setSoloResult(null);
       setSoloSide(null);
       setDirectorySummary(null);
-      setDirectoryContext(null);
       setError(null);
-      setSlotBarCollapsed(false);
       setSearchQuery('');
       setSelectedItemId(null);
       setErrorItem(null);
@@ -163,41 +146,23 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
 
   function toggleDiffHighlight() { setDiffHighlight((v) => !v); }
   function toggleOnlyDiff() { setOnlyDiff((v) => !v); }
-  function toggleSlotBarCollapsed() { setSlotBarCollapsed((v) => !v); }
   function toggleSidebarCollapsed() { setSidebarCollapsed((v) => !v); }
   function toggleRailCollapsed() { setRailCollapsed((v) => !v); }
 
-  function goBackToDirectory() {
-    setView('directory-overview');
-    setPairResult(null);
-    setSoloResult(null);
-    setSoloSide(null);
-    setDirectoryContext(null);
-    setInDirectorySubview(false);
-  }
-
-  async function selectItem(item: BatchListItem, itemsOverride?: BatchListItem[]) {
+  async function selectItem(item: BatchListItem) {
     const sid = ++selectSeqRef.current;
     setSelectedItemId(item.id);
     setErrorItem(null);
     setIsLoading(true);
     setError(null);
 
-    const allItems = itemsOverride ?? directorySummary?.items ?? [];
-    const differentItems = allItems.filter((i) => i.kind === 'different');
-    const diffIndex = differentItems.findIndex((i) => i.id === item.id);
-    setDirectoryContext(
-      diffIndex >= 0 ? { index: diffIndex + 1, totalDifferent: differentItems.length } : null,
-    );
-
     try {
-      setInDirectorySubview(true);
       if (item.kind === 'error') {
         setErrorItem(item);
         setPairResult(null);
         setSoloResult(null);
         setSoloSide(null);
-        setView('directory-overview'); // Task 7 will change to 'error'
+        setView('error');
       } else if (item.kind === 'left_only' && item.left_path) {
         const result = await api.inspectSingle(item.left_path, 'left');
         if (selectSeqRef.current !== sid) return;
@@ -261,10 +226,8 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
           setPairResult(result);
           setSoloResult(null); setSoloSide(null);
           setDirectorySummary(null);
-          setDirectoryContext(null);
           setView('mirror');
           setViewMode('tree');
-          setSlotBarCollapsed(true);
           touchRecent('file', left, right);
         } else if (left || right) {
           const target = left || right;
@@ -274,14 +237,10 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
           setSoloSide(side);
           setPairResult(null);
           setDirectorySummary(null);
-          setDirectoryContext(null);
           setView('solo');
           setViewMode('tree');
-          // Keep slot bar expanded — only collapse once both sides are filled.
-          setSlotBarCollapsed(false);
         } else {
           setView('welcome');
-          setSlotBarCollapsed(false);
         }
         return;
       }
@@ -294,9 +253,6 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
         setDirectorySummary(summary);
         setPairResult(null);
         setSoloResult(null); setSoloSide(null);
-        setDirectoryContext(null);
-        setView('directory-overview');
-        setSlotBarCollapsed(true);
         touchRecent('dir', left, right);
         const defaultFilter: ActiveFilter = summary.counts.different > 0 ? 'different' : 'all';
         setActiveFilter(defaultFilter);
@@ -306,10 +262,11 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
           summary.items.filter((i) => defaultFilter === 'all' || i.kind === defaultFilter),
           sortKey,
         );
-        if (visible[0]) await selectItem(visible[0], summary.items);
+        // 自动选中把 view 带进 mirror/solo/error；扫描结果为空时回到欢迎页
+        if (visible[0]) await selectItem(visible[0]);
+        else setView('welcome');
       } else {
         setView('welcome');
-        setSlotBarCollapsed(false);
       }
     } catch (err) {
       if (scanSeqRef.current === runId) setError(formatError(err));
@@ -340,32 +297,30 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'o') {
-        e.preventDefault();
-        document.dispatchEvent(new CustomEvent('wb:pickLeft'));
-      } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'o') {
-        e.preventDefault();
-        document.dispatchEvent(new CustomEvent('wb:pickRight'));
+      const k = e.key.toLowerCase();
+      if (e.ctrlKey && !e.shiftKey && k === 'o') {
+        e.preventDefault(); document.dispatchEvent(new CustomEvent('wb:pickLeft'));
+      } else if (e.ctrlKey && e.shiftKey && k === 'o') {
+        e.preventDefault(); document.dispatchEvent(new CustomEvent('wb:pickRight'));
+      } else if (e.ctrlKey && k === 'f') {
+        e.preventDefault(); document.dispatchEvent(new CustomEvent('wb:focusSearch'));
+      } else if (e.ctrlKey && !e.shiftKey && k === 'b') {
+        e.preventDefault(); setSidebarCollapsed((v) => !v);
+      } else if (e.ctrlKey && e.shiftKey && k === 'b') {
+        e.preventDefault(); setRailCollapsed((v) => !v);
       } else if (e.ctrlKey && e.key === 'Enter') {
-        e.preventDefault();
-        void runAuto();
-      } else if (e.key === 'Escape') {
-        if ((view === 'mirror' || view === 'solo') && inDirectorySubview) {
-          goBackToDirectory();
-        } else {
-          setLeftInput(''); setRightInput('');
-        }
+        e.preventDefault(); void runAuto();
+      } else if (e.key === 'ArrowDown' && directorySummary) {
+        e.preventDefault(); void selectNext();
+      } else if (e.key === 'ArrowUp' && directorySummary) {
+        e.preventDefault(); void selectPrev();
+      } else if (k === 'n' || k === 'p') {
+        document.dispatchEvent(new CustomEvent('wb:diffJump', { detail: k === 'n' ? 1 : -1 }));
       } else if (e.key === '1') setViewMode('tree');
       else if (e.key === '2') setViewMode('json');
       else if (e.key === '3') setViewMode('image');
-      else if (e.key.toLowerCase() === 'd' && view === 'mirror') toggleDiffHighlight();
-      else if ((e.key === '[' || e.key === ']') && directoryContext) {
-        e.preventDefault();
-        const items = (directorySummary?.items ?? []).filter((i) => i.kind === 'different');
-        const cur = directoryContext.index - 1;
-        const next = e.key === ']' ? Math.min(cur + 1, items.length - 1) : Math.max(cur - 1, 0);
-        if (items[next]) void selectItem(items[next]);
-      }
+      else if (k === 'f' && view === 'mirror') toggleOnlyDiff();
+      else if (k === 'd' && view === 'mirror') toggleDiffHighlight();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -382,12 +337,9 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     pairResult,
     soloResult,
     soloSide,
-    directoryContext,
-    inDirectorySubview,
     viewMode,
     diffHighlight,
     onlyDiff,
-    slotBarCollapsed,
     isLoading,
     scanProgress,
     error,
@@ -416,8 +368,6 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     setViewMode,
     toggleDiffHighlight,
     toggleOnlyDiff,
-    toggleSlotBarCollapsed,
-    goBackToDirectory,
     navigateToPair,
     runAuto,
     runCompare,

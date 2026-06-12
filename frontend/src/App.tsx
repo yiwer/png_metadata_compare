@@ -4,16 +4,17 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openPath } from '@tauri-apps/plugin-opener';
-import { SlotBar } from './components/SlotBar';
-import { SoloTree } from './components/SoloTree';
-import { MirrorTree } from './components/MirrorTree';
-import { DirectoryList } from './components/DirectoryList';
+import { Sidebar } from './components/Sidebar';
+import { UnifiedTree } from './components/UnifiedTree';
+import type { FocusRequest } from './components/UnifiedTree';
+import { DiffRail } from './components/DiffRail';
+import { WelcomePane } from './components/WelcomePane';
 import { useWorkbench } from './features/workbench/useWorkbench';
-import { buildMirrorRows, hasDiffDeep } from './lib/treeModel';
-import type { MirrorRow } from './lib/treeModel';
-import type { DiffNode, DiffStatus, JsonValue, ScanProgress } from './lib/types';
+import { buildMirrorRows } from './lib/treeModel';
+import { buildDiffEntries } from './lib/diffList';
 
 const win = getCurrentWindow();
+const RAIL_AUTO_COLLAPSE_WIDTH = 1000;
 
 async function pickPath(directory: boolean): Promise<string> {
   const selected = await open({
@@ -37,7 +38,6 @@ export default function App() {
     if (p) wb.setRightInput(p);
   };
 
-  // Listen to keyboard-driven pick events from useWorkbench
   useEffect(() => {
     const onL = () => void handlePickLeft();
     const onR = () => void handlePickRight();
@@ -49,62 +49,83 @@ export default function App() {
     };
   });
 
-  // Auto-run on input change
   useEffect(() => {
     if (wb.leftInput || wb.rightInput) void wb.runAuto();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wb.leftInput, wb.rightInput, wb.mode]);
 
-  const showModeToggle = wb.view === 'welcome' || wb.view === 'directory-overview' || !wb.inDirectorySubview;
-  const showSlotBar = wb.view !== 'mirror' || !wb.inDirectorySubview;
+  // 窗口过窄自动收起差异栏；手动操作后本会话内尊重手动状态
+  const [railManual, setRailManual] = useState(false);
+  useEffect(() => {
+    const onResize = () => {
+      if (railManual) return;
+      wb.setRailCollapsed(window.innerWidth < RAIL_AUTO_COLLAPSE_WIDTH);
+    };
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [railManual]);
+
+  // ===== 行模型单处计算，树与差异栏共享（设计 §5） =====
+  const pairRows = useMemo(
+    () => (wb.pairResult
+      ? buildMirrorRows(wb.pairResult.left.metadata, wb.pairResult.right.metadata, wb.pairResult.diff_root)
+      : null),
+    [wb.pairResult],
+  );
+  const soloRows = useMemo(
+    () => (wb.soloResult?.metadata !== undefined && wb.soloResult?.metadata !== null
+      ? buildMirrorRows(
+          wb.soloSide === 'right' ? null : wb.soloResult.metadata,
+          wb.soloSide === 'right' ? wb.soloResult.metadata : null,
+          null,
+        )
+      : null),
+    [wb.soloResult, wb.soloSide],
+  );
+  const diffEntries = useMemo(() => (pairRows ? buildDiffEntries(pairRows) : []), [pairRows]);
+
+  // ===== 差异跳转（n/p 与差异栏点击共用） =====
+  const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
+  const jumpTo = (path: string) =>
+    setFocusRequest((cur) => ({ path, seq: (cur?.seq ?? 0) + 1 }));
+  useEffect(() => {
+    const onJump = (e: Event) => {
+      const dir = (e as CustomEvent<number>).detail;
+      if (diffEntries.length === 0) return;
+      setFocusRequest((cur) => {
+        const curIdx = cur ? diffEntries.findIndex((d) => d.path === cur.path) : -1;
+        const next = (curIdx + dir + diffEntries.length) % diffEntries.length;
+        return { path: diffEntries[next].path, seq: (cur?.seq ?? 0) + 1 };
+      });
+    };
+    document.addEventListener('wb:diffJump', onJump);
+    return () => document.removeEventListener('wb:diffJump', onJump);
+  }, [diffEntries]);
+
+  const showSidebar = isDir && (wb.directorySummary !== null || wb.isLoading) && !wb.sidebarCollapsed;
+  const showRail = wb.view === 'mirror' && wb.pairResult !== null;
+  const showWelcome = wb.view === 'welcome' && !(isDir && wb.isLoading);
 
   return (
     <div className="app-shell">
       <header className="topbar" data-tauri-drag-region>
         <div className="topbar-left">
           <img className="brand-icon" src="/app-icon.png" alt="" draggable={false} />
-          <span className="brand">PNG ⌁ Compare</span>
-
-          {showModeToggle && (
-            <>
-              <div className="topbar-vsep" />
-              <div className="mode-toggle" role="group" aria-label="模式">
-                <button
-                  type="button"
-                  className={`mode-btn${wb.mode === 'single' ? ' mode-btn--active' : ''}`}
-                  onClick={() => wb.setMode('single')}
-                >单文件</button>
-                <button
-                  type="button"
-                  className={`mode-btn${wb.mode === 'directory' ? ' mode-btn--active' : ''}`}
-                  onClick={() => wb.setMode('directory')}
-                >目录</button>
-              </div>
-            </>
-          )}
-
-          {wb.inDirectorySubview && wb.view !== 'directory-overview' && (
-            <>
-              <div className="topbar-vsep" />
-              <button type="button" className="back-btn" onClick={wb.goBackToDirectory}>
-                ← 返回目录
-              </button>
-            </>
+          <span className="brand">PNG Compare</span>
+          <div className="topbar-vsep" />
+          <div className="mode-toggle" role="group" aria-label="模式">
+            <button type="button" className={`mode-btn${wb.mode === 'single' ? ' mode-btn--active' : ''}`}
+              onClick={() => wb.setMode('single')}>单文件</button>
+            <button type="button" className={`mode-btn${wb.mode === 'directory' ? ' mode-btn--active' : ''}`}
+              onClick={() => wb.setMode('directory')}>目录</button>
+          </div>
+          {isDir && wb.directorySummary && (
+            <button type="button" className="topbar-collapse" title="收起/展开侧栏 (Ctrl+B)"
+              onClick={wb.toggleSidebarCollapsed}>{wb.sidebarCollapsed ? '⇤' : '⇥'}</button>
           )}
         </div>
-
-        <div className="topbar-center">
-          {wb.view === 'mirror' && wb.pairResult && (
-            <span>{wb.pairResult.left.file_name}</span>
-          )}
-          {wb.view === 'solo' && wb.soloResult && (
-            <span>{wb.soloResult.file_name}</span>
-          )}
-          {wb.directoryContext && (
-            <span>{wb.directoryContext.index} / {wb.directoryContext.totalDifferent} 处不一致</span>
-          )}
-        </div>
-
         <div className="topbar-right">
           <div className="win-controls">
             <button type="button" className="win-btn" onClick={() => void win.minimize()} aria-label="最小化">─</button>
@@ -114,165 +135,142 @@ export default function App() {
         </div>
       </header>
 
-      {showSlotBar && (
-        <SlotBar
-          mode={wb.mode}
-          leftValue={wb.leftInput}
-          rightValue={wb.rightInput}
-          collapsed={wb.slotBarCollapsed}
-          onPickLeft={() => void handlePickLeft()}
-          onPickRight={() => void handlePickRight()}
-          onLeftChange={(p) => wb.tryDropPath('left', p)}
-          onRightChange={(p) => wb.tryDropPath('right', p)}
-          onToggleCollapsed={wb.toggleSlotBarCollapsed}
-        />
-      )}
-
-      <ControlBar wb={wb} />
-
       {wb.error && <div className="banner banner--error">{wb.error}</div>}
 
-      {wb.isLoading && isDir && <ScanProgressBar progress={wb.scanProgress} />}
-
-      <main style={{ overflow: 'hidden' }}>
-        {wb.view === 'welcome' && <Welcome mode={wb.mode} />}
-
-        {wb.view === 'solo' && wb.soloResult?.metadata && (
-          <SoloTreeFrame name={wb.soloResult.file_name} side={wb.soloSide!}>
-            <SoloTree value={wb.soloResult.metadata} />
-          </SoloTreeFrame>
+      <div className="shell-body">
+        {showSidebar && (
+          <Sidebar
+            leftDir={wb.leftInput} rightDir={wb.rightInput}
+            summary={wb.directorySummary} filteredItems={wb.filteredItems}
+            activeFilter={wb.activeFilter} searchQuery={wb.searchQuery} sortKey={wb.sortKey}
+            selectedItemId={wb.selectedItemId} isLoading={wb.isLoading} scanProgress={wb.scanProgress}
+            onFilter={wb.setActiveFilter} onSearch={wb.setSearchQuery} onSort={wb.setSortKey}
+            onSelect={(item) => void wb.selectItem(item)}
+            onPickLeft={() => void handlePickLeft()} onPickRight={() => void handlePickRight()}
+            onApplyPair={(l, r) => { wb.setLeftInput(l); wb.setRightInput(r); }}
+            onPastePath={(side, p) => wb.tryDropPath(side, p)}
+            onCancelScan={() => void wb.cancelScan()}
+          />
         )}
-        {wb.view === 'solo' && wb.soloResult && !wb.soloResult.metadata && (
-          <div className="banner banner--error">该文件不含嵌入式元数据。</div>
-        )}
 
-        {wb.view === 'mirror' && wb.pairResult && (
-          <div className="mirror-view">
-            <div className="mirror-view__main">
+        <main className="center">
+          {showWelcome && (
+            <WelcomePane mode={wb.mode}
+              onApplyPair={(l, r) => { wb.setLeftInput(l); wb.setRightInput(r); }}
+              onDrop={(side, p) => wb.tryDropPath(side, p)}
+              onPickLeft={() => void handlePickLeft()} onPickRight={() => void handlePickRight()} />
+          )}
+
+          {(wb.view === 'mirror' || wb.view === 'solo') && (
+            <DetailHeader wb={wb} diffCount={diffEntries.length} />
+          )}
+
+          {wb.view === 'solo' && wb.soloResult && (
+            soloRows
+              ? (wb.viewMode === 'image'
+                  ? <SingleImage path={wb.soloResult.file_path} name={wb.soloResult.file_name} />
+                  : wb.viewMode === 'json'
+                    ? <RawJsonSplit left={wb.soloSide === 'left' ? wb.soloResult.raw_json : null}
+                        right={wb.soloSide === 'right' ? wb.soloResult.raw_json : null} solo={wb.soloSide} />
+                    : <UnifiedTree rows={soloRows} solo={wb.soloSide} highlight={false} onlyDiff={false}
+                        leftLabel={wb.soloSide === 'left' ? wb.soloResult.file_name : ''}
+                        rightLabel={wb.soloSide === 'right' ? wb.soloResult.file_name : ''}
+                        focusRequest={null} />)
+              : <div className="banner banner--error">该文件不含嵌入式元数据。</div>
+          )}
+
+          {wb.view === 'mirror' && wb.pairResult && pairRows && (
+            <>
               {wb.viewMode === 'tree' && (
-                <MirrorTree
-                  left={wb.pairResult.left.metadata}
-                  right={wb.pairResult.right.metadata}
-                  diffRoot={wb.pairResult.diff_root}
-                  highlight={wb.diffHighlight}
-                  onlyDiff={wb.onlyDiff}
-                  leftLabel={wb.pairResult.left.file_name}
-                  rightLabel={wb.pairResult.right.file_name}
-                />
+                <UnifiedTree rows={pairRows} solo={null}
+                  highlight={wb.diffHighlight} onlyDiff={wb.onlyDiff}
+                  leftLabel={wb.pairResult.left.file_name} rightLabel={wb.pairResult.right.file_name}
+                  focusRequest={focusRequest} />
               )}
               {wb.viewMode === 'json' && (
-                <RawJsonSplit left={wb.pairResult.left.raw_json} right={wb.pairResult.right.raw_json} />
+                <RawJsonSplit left={wb.pairResult.left.raw_json} right={wb.pairResult.right.raw_json} solo={null} />
               )}
               {wb.viewMode === 'image' && (
                 <ImageSplit
-                  leftPath={wb.pairResult.left.file_path}
-                  rightPath={wb.pairResult.right.file_path}
-                  leftName={wb.pairResult.left.file_name}
-                  rightName={wb.pairResult.right.file_name}
-                />
+                  leftPath={wb.pairResult.left.file_path} rightPath={wb.pairResult.right.file_path}
+                  leftName={wb.pairResult.left.file_name} rightName={wb.pairResult.right.file_name} />
               )}
-            </div>
-            <DiffReport
-              left={wb.pairResult.left.metadata}
-              right={wb.pairResult.right.metadata}
-              diffRoot={wb.pairResult.diff_root}
-            />
-          </div>
-        )}
+            </>
+          )}
 
-        {wb.view === 'directory-overview' && wb.directorySummary && (
-          <DirectoryList
-            summary={wb.directorySummary}
-            filteredItems={wb.filteredItems}
-            activeFilter={wb.activeFilter}
-            onFilter={wb.setActiveFilter}
-            onSelect={(item) => void wb.navigateToPair(item)}
-          />
+          {wb.view === 'error' && wb.errorItem && <ErrorCard item={wb.errorItem} />}
+        </main>
+
+        {showRail && (
+          <DiffRail entries={diffEntries} onJump={jumpTo}
+            collapsed={wb.railCollapsed}
+            onToggle={() => { setRailManual(true); wb.toggleRailCollapsed(); }} />
         )}
-      </main>
+      </div>
 
       {wb.toast && <div className="toast">{wb.toast}</div>}
     </div>
   );
 }
 
-function ScanProgressBar({ progress }: { progress: ScanProgress | null }) {
-  const comparing = progress?.stage === 'comparing' && progress.total > 0;
-  const percent = comparing ? Math.round((progress.done / progress.total) * 100) : 0;
+function DetailHeader({ wb, diffCount }: { wb: ReturnType<typeof useWorkbench>; diffCount: number }) {
+  const isSingle = wb.mode === 'single';
+  const name = wb.view === 'mirror'
+    ? wb.pairResult?.left.file_name
+    : wb.soloResult?.file_name;
   return (
-    <div className="scan-progress" role="status" aria-live="polite">
-      <span className="scan-progress__label">
-        {comparing
-          ? `正在比对 ${progress.done} / ${progress.total} 对文件 (${percent}%)`
-          : '正在扫描目录…'}
-      </span>
-      <div className="scan-progress__track">
-        <div
-          className={`scan-progress__fill${comparing ? '' : ' scan-progress__fill--indeterminate'}`}
-          style={comparing ? { width: `${percent}%` } : undefined}
-        />
+    <div className="detail-head">
+      <div className="detail-head__seg" role="group" aria-label="视图模式">
+        <button data-active={wb.viewMode === 'tree'} onClick={() => wb.setViewMode('tree')}>树</button>
+        <button data-active={wb.viewMode === 'json'} onClick={() => wb.setViewMode('json')}>JSON</button>
+        <button data-active={wb.viewMode === 'image'} onClick={() => wb.setViewMode('image')}>图片</button>
       </div>
-    </div>
-  );
-}
-
-function Welcome({ mode }: { mode: 'single' | 'directory' }) {
-  return (
-    <div className="welcome">
-      <div className="welcome__title">PNG ⌁ Compare</div>
-      <div className="welcome__hint">
-        拖入 {mode === 'single' ? 'PNG 文件' : '文件夹'}（左右各一个），或按
-        <kbd>Ctrl+O</kbd> / <kbd>Ctrl+Shift+O</kbd> 选择
-      </div>
-      <div className="welcome__hint">
-        快捷键：<kbd>Ctrl+Enter</kbd> 重新分析 · <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> 切换视图 · <kbd>D</kbd> 切换差异高亮
-      </div>
-    </div>
-  );
-}
-
-function ControlBar({ wb }: { wb: ReturnType<typeof useWorkbench> }) {
-  if (wb.view === 'welcome' || wb.view === 'directory-overview') return null;
-  const total = wb.pairResult ? wb.pairResult.diff_summary : null;
-  return (
-    <div className="controlbar">
-      {wb.view === 'mirror' && (
-        <div className="controlbar__seg" role="group" aria-label="视图模式">
-          <button data-active={wb.viewMode === 'tree'} onClick={() => wb.setViewMode('tree')}>树</button>
-          <button data-active={wb.viewMode === 'json'} onClick={() => wb.setViewMode('json')}>JSON</button>
-          <button data-active={wb.viewMode === 'image'} onClick={() => wb.setViewMode('image')}>图片</button>
-        </div>
-      )}
       {wb.view === 'mirror' && (
         <>
-          <button className="controlbar__btn" data-active={wb.diffHighlight} onClick={wb.toggleDiffHighlight}>高亮差异</button>
-          <button className="controlbar__btn" data-active={wb.onlyDiff} onClick={wb.toggleOnlyDiff}>仅看不同</button>
-          <span className="controlbar__spacer" />
-          {total && (
-            <span className="controlbar__summary">
-              {total.modified} 处不同 · {total.added} 仅右 · {total.removed} 仅左 · {total.reordered} 顺序不同
-            </span>
-          )}
+          <button className="detail-head__btn" data-active={wb.onlyDiff} onClick={wb.toggleOnlyDiff}>仅看不同</button>
+          <button className="detail-head__btn" data-active={wb.diffHighlight} onClick={wb.toggleDiffHighlight}>高亮</button>
         </>
+      )}
+      <span className="detail-head__name" title={name ?? ''}>
+        {wb.view === 'solo' && `仅查看${wb.soloSide === 'left' ? '左' : '右'} · `}{name}
+      </span>
+      <span className="detail-head__spacer" />
+      {isSingle && wb.view === 'mirror' && wb.pairResult && (
+        <span className="detail-head__chips">
+          <button type="button" title={wb.pairResult.left.file_path}
+            onClick={() => document.dispatchEvent(new CustomEvent('wb:pickLeft'))}>左 ⌁ {wb.pairResult.left.file_name}</button>
+          <button type="button" title={wb.pairResult.right.file_path}
+            onClick={() => document.dispatchEvent(new CustomEvent('wb:pickRight'))}>右 ⌁ {wb.pairResult.right.file_name}</button>
+        </span>
+      )}
+      {wb.view === 'mirror' && (
+        <span className="detail-head__hint">{diffCount > 0 ? `n/p 跳差异 · ${diffCount} 处` : '无差异'}</span>
       )}
     </div>
   );
 }
 
-function SoloTreeFrame({ side, name, children }: { side: 'left' | 'right'; name: string; children: React.ReactNode }) {
+function ErrorCard({ item }: { item: import('./lib/types').BatchListItem }) {
+  const target = item.left_path ?? item.right_path ?? item.label;
   return (
-    <>
-      <div className="solo-status">仅查看 {side === 'left' ? '左' : '右'} · {name}</div>
-      {children}
-    </>
+    <div className="error-card">
+      <div className="error-card__title">无法解析此文件</div>
+      <div className="error-card__path">{item.label}</div>
+      {item.message && <div className="error-card__msg">{item.message}</div>}
+      <button type="button" className="error-card__open" onClick={() => void openPath(target)}>打开文件 ↗</button>
+    </div>
   );
 }
 
-function RawJsonSplit({ left, right }: { left: string | null; right: string | null }) {
+function RawJsonSplit({ left, right, solo }: { left: string | null; right: string | null; solo: 'left' | 'right' | null }) {
+  const leftText = useMemo(() => format(left), [left]);
+  const rightText = useMemo(() => format(right), [right]);
+  if (solo === 'left') return <pre className="raw-json raw-json--solo">{leftText}</pre>;
+  if (solo === 'right') return <pre className="raw-json raw-json--solo">{rightText}</pre>;
   return (
     <div className="mirror-grid">
-      <pre className="raw-json">{format(left)}</pre>
-      <pre className="raw-json">{format(right)}</pre>
+      <pre className="raw-json">{leftText}</pre>
+      <pre className="raw-json">{rightText}</pre>
     </div>
   );
 }
@@ -280,6 +278,16 @@ function RawJsonSplit({ left, right }: { left: string | null; right: string | nu
 function format(raw: string | null): string {
   if (!raw) return '— 无 JSON —';
   try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
+}
+
+function SingleImage({ path, name }: { path: string; name: string }) {
+  return (
+    <div className="image-split">
+      <div className="image-split__panes">
+        <ImagePane key={path} path={path} name={name} transform="none" />
+      </div>
+    </div>
+  );
 }
 
 function ImageSplit({ leftPath, rightPath, leftName, rightName }: { leftPath: string; rightPath: string; leftName: string; rightName: string; }) {
@@ -327,8 +335,8 @@ function ImageSplit({ leftPath, rightPath, leftName, rightName }: { leftPath: st
         onMouseUp={endDrag}
         onMouseLeave={endDrag}
       >
-        <ImagePane path={leftPath} name={leftName} transform={transform} />
-        <ImagePane path={rightPath} name={rightName} transform={transform} />
+        <ImagePane key={leftPath} path={leftPath} name={leftName} transform={transform} />
+        <ImagePane key={rightPath} path={rightPath} name={rightName} transform={transform} />
       </div>
     </div>
   );
@@ -336,221 +344,22 @@ function ImageSplit({ leftPath, rightPath, leftName, rightName }: { leftPath: st
 
 function ImagePane({ path, name, transform }: { path: string; name: string; transform: string }) {
   const url = convertFileSrc(path);
+  const [broken, setBroken] = useState(false);
   return (
     <div className="image-pane">
       <div className="image-pane__viewport">
-        <img
-          className="image-pane__img"
-          src={url}
-          alt={name}
-          draggable={false}
-          style={{ transform, transformOrigin: 'center center' }}
-          onError={(e) => { (e.currentTarget as HTMLImageElement).dataset.broken = 'true'; }}
-        />
+        {broken ? (
+          <div className="image-pane__broken">无法加载图片</div>
+        ) : (
+          <img className="image-pane__img" src={url} alt={name} draggable={false}
+            style={{ transform, transformOrigin: 'center center' }}
+            onError={() => setBroken(true)} />
+        )}
       </div>
       <div className="image-pane__bar">
         <span className="image-pane__name">{name}</span>
-        <button type="button" className="controlbar__btn" onClick={() => void openPath(path)}>打开原文件 ↗</button>
+        <button type="button" className="detail-head__btn" onClick={() => void openPath(path)}>打开原文件 ↗</button>
       </div>
-    </div>
-  );
-}
-
-// ============================================================
-// Diff report (bottom strip on mirror view)
-// ============================================================
-
-const STATUS_LABEL: Record<DiffStatus, string> = {
-  unchanged: '未变',
-  modified: '改',
-  added: '仅右',
-  removed: '仅左',
-  reordered: '顺序',
-  error: '错',
-};
-
-const STATUS_TO_BADGE: Record<DiffStatus, string> = {
-  unchanged: 'badge--neu',
-  modified: 'badge--mod',
-  added: 'badge--add',
-  removed: 'badge--rem',
-  reordered: 'badge--neu',
-  error: 'badge--err',
-};
-
-interface DiffCounts {
-  modified: number;
-  added: number;
-  removed: number;
-  total: number;
-}
-
-function tallyDiff(rows: MirrorRow[]): DiffCounts {
-  const counts: DiffCounts = { modified: 0, added: 0, removed: 0, total: 0 };
-  function walk(rs: MirrorRow[]) {
-    for (const r of rs) {
-      if (r.kind === 'leaf') {
-        if (r.status === 'modified') { counts.modified++; counts.total++; }
-        else if (r.status === 'added') { counts.added++; counts.total++; }
-        else if (r.status === 'removed') { counts.removed++; counts.total++; }
-        continue;
-      }
-      // Array-item Added/Removed counts as a single unit (no nested descent).
-      const isItemAddRem =
-        r.variant === 'array-item' && (r.status === 'added' || r.status === 'removed');
-      if (isItemAddRem) {
-        if (r.status === 'added') counts.added++;
-        else counts.removed++;
-        counts.total++;
-        continue;
-      }
-      if (r.children) walk(r.children);
-    }
-  }
-  walk(rows);
-  return counts;
-}
-
-function DiffReport({
-  left, right, diffRoot,
-}: {
-  left: JsonValue | null;
-  right: JsonValue | null;
-  diffRoot: DiffNode | null;
-}) {
-  const rows = useMemo(() => buildMirrorRows(left, right, diffRoot), [left, right, diffRoot]);
-  const counts = useMemo(() => tallyDiff(rows), [rows]);
-  const [collapsed, setCollapsed] = useState(false);
-
-  return (
-    <div className={`diff-report${collapsed ? ' diff-report--collapsed' : ''}`}>
-      <button
-        type="button"
-        className="diff-report__head"
-        onClick={() => setCollapsed((c) => !c)}
-        aria-expanded={!collapsed}
-      >
-        <span className="diff-report__title">
-          <span className="diff-report__caret">{collapsed ? '▶' : '▼'}</span>
-          差异汇总
-        </span>
-        <span className="diff-report__counts">
-          {counts.total === 0 ? (
-            <span className="controlbar__summary">两份元数据完全一致</span>
-          ) : (
-            <>
-              {counts.modified > 0 && <span className="badge badge--mod">{counts.modified} 改</span>}
-              {counts.removed > 0 && <span className="badge badge--rem">{counts.removed} 仅左</span>}
-              {counts.added > 0 && <span className="badge badge--add">{counts.added} 仅右</span>}
-              <span className="diff-report__total">共 {counts.total} 项</span>
-            </>
-          )}
-        </span>
-      </button>
-      {!collapsed && counts.total > 0 && (
-        <div className="diff-report__body">
-          <DiffTree rows={rows} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DiffTree({ rows }: { rows: MirrorRow[] }) {
-  return (
-    <>
-      {rows.map((row) => (
-        <DiffTreeNode key={row.path || 'root'} row={row} level={0} />
-      ))}
-    </>
-  );
-}
-
-function DiffTreeNode({ row, level }: { row: MirrorRow; level: number }) {
-  if (row.status === 'unchanged' && !hasDiffDeep(row)) return null;
-
-  // root group: render children only, no header
-  if (row.variant === 'object-root') {
-    return (
-      <>
-        {row.children?.map((c) => (
-          <DiffTreeNode key={c.path} row={c} level={level} />
-        ))}
-      </>
-    );
-  }
-
-  if (row.kind === 'leaf') {
-    if (row.status === 'unchanged') return null;
-    return <DiffLeaf row={row} level={level} />;
-  }
-
-  // Array-item Added/Removed: render the colored header without descending into fields.
-  const isItemAddRem =
-    row.variant === 'array-item' && (row.status === 'added' || row.status === 'removed');
-
-  if (isItemAddRem) {
-    return <DiffGroupHead row={row} level={level} mode="leaf" />;
-  }
-
-  const changedChildren = row.children?.filter((c) => c.status !== 'unchanged' || hasDiffDeep(c)) ?? [];
-  if (changedChildren.length === 0) return null;
-  return (
-    <>
-      <DiffGroupHead row={row} level={level} mode="branch" />
-      {changedChildren.map((c) => (
-        <DiffTreeNode key={c.path} row={c} level={level + 1} />
-      ))}
-    </>
-  );
-}
-
-function DiffGroupHead({
-  row, level, mode,
-}: { row: MirrorRow; level: number; mode: 'branch' | 'leaf' }) {
-  const isAddRem = row.status === 'added' || row.status === 'removed';
-  // For an array-item that exists exclusively on one side, color it green (added).
-  const colorStatus =
-    row.variant === 'array-item' && isAddRem ? 'added' : row.status;
-  const label =
-    row.status === 'added' ? '仅右'
-    : row.status === 'removed' ? '仅左'
-    : row.status === 'modified' ? '改'
-    : row.status === 'error' ? '错'
-    : '';
-  return (
-    <div
-      className={`diff-tree__group diff-tree__group--${colorStatus} diff-tree__group--${mode}`}
-      style={{ paddingLeft: 8 + level * 14 }}
-    >
-      {label && <span className={`badge ${STATUS_TO_BADGE[colorStatus]}`}>{label}</span>}
-      <span className="diff-tree__label">{row.label}</span>
-      {row.variant === 'array' && typeof row.count === 'number' && (
-        <span className="diff-tree__count">({row.count} 项)</span>
-      )}
-    </div>
-  );
-}
-
-function DiffLeaf({ row, level }: { row: MirrorRow; level: number }) {
-  return (
-    <div
-      className={`diff-tree__leaf diff-tree__leaf--${row.status}`}
-      style={{ paddingLeft: 8 + level * 14 }}
-    >
-      <span className={`badge ${STATUS_TO_BADGE[row.status]}`}>{STATUS_LABEL[row.status]}</span>
-      <span className="diff-tree__label">{row.label}</span>
-      <span className="diff-tree__values">
-        {row.status === 'modified' && (
-          <>
-            <span className="diff-tree__old">{row.leftValue}</span>
-            <span className="diff-tree__arrow">→</span>
-            <span className="diff-tree__new">{row.rightValue}</span>
-          </>
-        )}
-        {row.status === 'removed' && <span className="diff-tree__old">{row.leftValue}</span>}
-        {row.status === 'added' && <span className="diff-tree__new">{row.rightValue}</span>}
-      </span>
     </div>
   );
 }
