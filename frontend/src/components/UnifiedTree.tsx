@@ -101,7 +101,7 @@ function RowView({
     // In solo mode, skip leaves whose solo-side raw value is absent (schema-padded placeholders).
     if (solo === 'left' && row.leftRaw === undefined) return null;
     if (solo === 'right' && row.rightRaw === undefined) return null;
-    return <Leaf row={row} level={level} highlight={highlight} solo={solo} />;
+    return <Leaf row={row} highlight={highlight} solo={solo} />;
   }
 
   if (row.variant === 'object-root') {
@@ -151,13 +151,13 @@ function RowView({
   );
 }
 
-function Leaf({ row, level, highlight, solo }: { row: MirrorRow; level: number; highlight: boolean; solo: Side | null }) {
+function Leaf({ row, highlight, solo }: { row: MirrorRow; highlight: boolean; solo: Side | null }) {
   const statusCls = !solo && highlight ? ROW_STATUS[row.status] ?? '' : '';
   const showLeft = solo === null || solo === 'left';
   const showRight = solo === null || solo === 'right';
   return (
     <div className={`utree__cols utree__row ${statusCls}`.trim()} data-path={row.path} data-solo={solo ?? undefined}>
-      <span className="utree__key" style={{ paddingLeft: 10 + level * 16 }}>
+      <span className="utree__key">
         {row.label}
         {row.isUnknown && <span className="utree__unknown">未识别</span>}
       </span>

@@ -324,9 +324,15 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 .utree__head { padding: 6px 10px; border-bottom: 1px solid var(--border-default); color: var(--text-tertiary); font: var(--fs-xs)/var(--lh-xs) var(--font-mono); background: var(--bg-page); z-index: 1; }
 .utree__col-side { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .utree__body { overflow-y: auto; flex: 1; padding-bottom: var(--sp-5); }
-.utree__nested { border-left: 1px solid var(--border-subtle); content-visibility: auto; contain-intrinsic-size: auto 600px; }
+.utree__nested {
+  margin-left: 10px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border-subtle);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 600px;
+}
 .utree__row { padding-top: 4px; padding-bottom: 4px; padding-right: 10px; border-radius: var(--r-sm); font: var(--fs-md)/var(--lh-md) var(--font-mono); }
-.utree__key { color: var(--text-secondary); }
+.utree__key { color: var(--text-secondary); padding-left: 10px; }
 .utree__val { color: var(--text-primary); word-break: break-all; position: relative; }
 .utree__row:hover { background: var(--bg-hover); }
 .utree__row--modified, .utree__row--modified:hover { background: var(--mod-bg); }
