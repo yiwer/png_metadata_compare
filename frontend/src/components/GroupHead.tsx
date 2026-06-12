@@ -30,15 +30,9 @@ export function GroupHead({
   highlight?: boolean;
 }) {
   const statusCls = highlight && status ? STATUS_CLASS[status] : undefined;
-  const cls = [
-    'group-head',
-    level > 0 ? 'group-head--nested' : '',
-    statusCls ?? '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const cls = ['group-head', statusCls ?? ''].filter(Boolean).join(' ');
   return (
-    <div className={cls}>
+    <div className={cls} data-level={Math.min(level, 3)}>
       <button type="button" className="group-head__toggle" onClick={onToggle} aria-label={open ? '收起' : '展开'}>
         {open ? '▼' : '▶'}
       </button>

@@ -19,8 +19,15 @@ describe('GroupHead', () => {
     expect(screen.getByRole('button')).toHaveTextContent('▶');
   });
 
-  it('applies nested class when level > 0', () => {
-    const { container } = render(<GroupHead label="x" level={1} />);
-    expect(container.firstChild).toHaveClass('group-head--nested');
+  it('emits data-level capped at 3 and drops the legacy nested class', () => {
+    const { container, rerender } = render(<GroupHead label="x" />);
+    expect(container.firstChild).toHaveAttribute('data-level', '0');
+    rerender(<GroupHead label="x" level={1} />);
+    expect(container.firstChild).toHaveAttribute('data-level', '1');
+    rerender(<GroupHead label="x" level={2} />);
+    expect(container.firstChild).toHaveAttribute('data-level', '2');
+    rerender(<GroupHead label="x" level={5} />);
+    expect(container.firstChild).toHaveAttribute('data-level', '3');
+    expect(container.firstChild).not.toHaveClass('group-head--nested');
   });
 });
