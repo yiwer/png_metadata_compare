@@ -2,7 +2,7 @@
 :root {
   /* Surface */
   --bg-page:     #1b1e23;   /* 中央底 */
-  --bg-panel:    #1e2126;   /* 侧栏 / 差异栏底 */
+  --bg-panel:    #1e2126;   /* 侧栏 / 差异栏底（Sidebar/DiffRail, Task 4-5） */
   --bg-elevated: #22262d;   /* 顶栏 / 卡片 / 输入框 */
   --bg-hover:    #262a31;
 
@@ -13,8 +13,8 @@
   --bg-overlay:     #262a31;
   --bg-tint-warm:   rgba(214, 185, 123, 0.04);
   --bg-tint-cool:   rgba(130, 170, 255, 0.04);
-  --bar-edge-top:    none;
-  --bar-edge-bottom: none;
+  --bar-edge-top:    0 0 0 transparent;  /* no-op shadow; comma-safe in compound box-shadow */
+  --bar-edge-bottom: 0 0 0 transparent;
 
   /* Text */
   --text-primary:   #e8eaed;
@@ -30,6 +30,7 @@
 
   /* Diff status */
   --mod-bg:    rgba(214, 185, 123, 0.13);
+  /* consumed by UnifiedTree (Task 3) */
   --mod-old:   #c8935e;
   --mod-new:   #e8c97a;
   --mod-text:  #e8c97a;   /* legacy alias */
@@ -51,7 +52,7 @@
   /* Group title */
   --group-head:        #d6b97b;
   --group-rule:        rgba(214, 185, 123, 0.15);
-  --group-bg:          transparent;
+  --group-bg:          transparent; /* intentional: graphite palette removes group section tint */
   --group-head-nested: rgba(214, 185, 123, 0.75);
   --group-rule-nested: rgba(214, 185, 123, 0.40);
 
