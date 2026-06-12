@@ -1,73 +1,77 @@
-/* frontend/src/styles/tokens.css */
+/* frontend/src/styles/tokens.css — graphite palette (2026-06-12 redesign §3) */
 :root {
-  /* Surface — layered tones to differentiate regions */
-  --bg-page:        #050608;  /* main content (deepest) */
-  --bg-topbar:      #14181f;  /* title bar — slight blue-grey */
-  --bg-slotbar:     #0e1218;  /* drop zone strip */
-  --bg-controlbar:  #0a0d12;  /* segmented controls strip */
-  --bg-elevated:    #1a1f28;  /* cards / filled slots / overlays */
-  --bg-overlay:     #1f2530;  /* hover */
-  --bg-tint-warm:   rgba(255, 181, 71, 0.04);  /* group section faint backdrop */
-  --bg-tint-cool:   rgba(91, 141, 255, 0.04);
+  /* Surface */
+  --bg-page:     #1b1e23;   /* 中央底 */
+  --bg-panel:    #1e2126;   /* 侧栏 / 差异栏底 */
+  --bg-elevated: #22262d;   /* 顶栏 / 卡片 / 输入框 */
+  --bg-hover:    #262a31;
 
-  /* Subtle texture: top inner highlight + bottom shadow on bars */
-  --bar-edge-top:    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  --bar-edge-bottom: 0 1px 0 rgba(0, 0, 0, 0.6);
+  /* Legacy aliases (Task 10 移除) */
+  --bg-topbar:      #22262d;
+  --bg-slotbar:     #1e2126;
+  --bg-controlbar:  #1b1e23;
+  --bg-overlay:     #262a31;
+  --bg-tint-warm:   rgba(214, 185, 123, 0.04);
+  --bg-tint-cool:   rgba(130, 170, 255, 0.04);
+  --bar-edge-top:    none;
+  --bar-edge-bottom: none;
 
   /* Text */
-  --text-primary:   #ffffff;
-  --text-secondary: #b8c0d0;
-  --text-tertiary:  #6c7480;
-  --text-disabled:  #3a3f4a;
+  --text-primary:   #e8eaed;
+  --text-secondary: #9aa0a6;
+  --text-tertiary:  #6b7178;
+  --text-disabled:  #4a4f57;
 
   /* Borders */
-  --border-subtle:  #1f242c;
-  --border-default: #2c333d;
-  --border-emph:    #485466;
-  --border-focus:   #5b8dff;
+  --border-subtle:  #2a2e35;
+  --border-default: #33373e;
+  --border-emph:    #3a3f47;
+  --border-focus:   #82aaff;
 
   /* Diff status */
-  --mod-bg:    #3a2a00;
-  --mod-text:  #ffd23f;
-  --mod-arrow: #ffd23f;
+  --mod-bg:    rgba(214, 185, 123, 0.13);
+  --mod-old:   #c8935e;
+  --mod-new:   #e8c97a;
+  --mod-text:  #e8c97a;   /* legacy alias */
+  --mod-arrow: #e8c97a;   /* legacy alias */
 
-  --add-bg:    #0d2d18;
-  --add-text:  #5eed90;
-  --add-emph:  #5eed90;
+  --add-bg:    rgba(152, 195, 121, 0.10);
+  --add-text:  #98c379;
+  --add-emph:  #98c379;   /* legacy alias */
 
-  --rem-bg:    #330808;
-  --rem-text:  #ff6b6b;
-  --rem-emph:  #ff6b6b;
+  --rem-bg:    rgba(224, 108, 117, 0.10);
+  --rem-text:  #e06c75;
+  --rem-emph:  #e06c75;   /* legacy alias */
 
-  --reord-bord: #5b8dff;
+  --reord-bord: #82aaff;
 
-  --err-bg:    #2a0d2a;
-  --err-text:  #ff7ce0;
+  --err-bg:    rgba(214, 120, 181, 0.10);
+  --err-text:  #d678b5;
 
   /* Group title */
-  --group-head:        #ffb547;
-  --group-rule:        rgba(255, 181, 71, 0.15);
-  --group-bg:          rgba(255, 181, 71, 0.06);
-  --group-head-nested: rgba(255, 181, 71, 0.75);
-  --group-rule-nested: rgba(255, 181, 71, 0.40);
+  --group-head:        #d6b97b;
+  --group-rule:        rgba(214, 185, 123, 0.15);
+  --group-bg:          transparent;
+  --group-head-nested: rgba(214, 185, 123, 0.75);
+  --group-rule-nested: rgba(214, 185, 123, 0.40);
 
   /* Accent */
-  --accent:    #5b8dff;
-  --accent-bg: rgba(91, 141, 255, 0.15);
+  --accent:    #82aaff;
+  --accent-bg: #2d3f5e;
 
   /* Fonts */
   --font-ui:   "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", ui-monospace, Consolas, monospace;
 
-  /* Sizes */
+  /* Sizes — 树行用 --fs-md (13px)，§3 舒适度调整 */
   --fs-xs:  11px;  --lh-xs: 1.4;
   --fs-sm:  12px;  --lh-sm: 1.5;
-  --fs-md:  13px;  --lh-md: 1.5;
+  --fs-md:  13px;  --lh-md: 1.6;
   --fs-lg:  14px;  --lh-lg: 1.4;
   --fs-xl:  18px;  --lh-xl: 1.3;
   --fs-2xl: 24px;  --lh-2xl: 1.2;
 
-  /* Spacing (8px base) */
+  /* Spacing */
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
