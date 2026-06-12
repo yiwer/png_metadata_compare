@@ -6,16 +6,6 @@
   --bg-elevated: #22262d;   /* 顶栏 / 卡片 / 输入框 */
   --bg-hover:    #262a31;
 
-  /* Legacy aliases (Task 10 移除) */
-  --bg-topbar:      #22262d;
-  --bg-slotbar:     #1e2126;
-  --bg-controlbar:  #1b1e23;
-  --bg-overlay:     #262a31;
-  --bg-tint-warm:   rgba(214, 185, 123, 0.04);
-  --bg-tint-cool:   rgba(130, 170, 255, 0.04);
-  --bar-edge-top:    0 0 0 transparent;  /* no-op shadow; comma-safe in compound box-shadow */
-  --bar-edge-bottom: 0 0 0 transparent;
-
   /* Text */
   --text-primary:   #e8eaed;
   --text-secondary: #9aa0a6;
@@ -33,16 +23,12 @@
   /* consumed by UnifiedTree (Task 3) */
   --mod-old:   #c8935e;
   --mod-new:   #e8c97a;
-  --mod-text:  #e8c97a;   /* legacy alias */
-  --mod-arrow: #e8c97a;   /* legacy alias */
 
   --add-bg:    rgba(152, 195, 121, 0.10);
   --add-text:  #98c379;
-  --add-emph:  #98c379;   /* legacy alias */
 
   --rem-bg:    rgba(224, 108, 117, 0.10);
   --rem-text:  #e06c75;
-  --rem-emph:  #e06c75;   /* legacy alias */
 
   --reord-bord: #82aaff;
 

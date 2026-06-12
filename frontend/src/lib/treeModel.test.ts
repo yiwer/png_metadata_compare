@@ -281,6 +281,25 @@ describe('buildMirrorRows', () => {
   });
 });
 
+describe('buildKeyedChildren orphan disambiguation', () => {
+  it('gives side-tagged paths to keyless items so they never collide', () => {
+    // Lines items without LineName have no business key → orphanLeft/orphanRight.
+    // Both sides have one such item at position 0; paths must differ and carry the side tag.
+    const left = { Lines: [{ Direction: '东' }] };
+    const right = { Lines: [{ Direction: '西' }] };
+    const noDiffRoot: DiffNode = {
+      path: '', status: 'unchanged', left_value: null, right_value: null, summary: '', children: [],
+    };
+    const rows = buildMirrorRows(left as unknown as import('./types').JsonValue, right as unknown as import('./types').JsonValue, noDiffRoot);
+    const lines = rows[0].children!.find((r) => r.path === 'Lines')!;
+    expect(lines.children).toHaveLength(2);
+    const [leftOrphan, rightOrphan] = lines.children!;
+    expect(leftOrphan.path).not.toBe(rightOrphan.path);
+    expect(leftOrphan.path).toContain('[L0]');
+    expect(rightOrphan.path).toContain('[R0]');
+  });
+});
+
 describe('buildMirrorRows raw payloads', () => {
   it('carries leftRaw/rightRaw on leaves and groups', () => {
     const left = { StopName: '翻身地铁站', Lines: [{ LineName: 'B932', Direction: '东' }] };

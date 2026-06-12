@@ -390,13 +390,15 @@ function buildKeyedChildren(
 
   // Items lacking a business key on either side: surface them positionally so the
   // user still sees them. Backend would emit error nodes; here we just render rows.
+  // Side-tagged segments (L/R) prevent duplicate React keys when both sides have
+  // keyless items at the same position.
   for (const { pos, value } of orphanLeft) {
-    const itemPath = `${path}[${pos}]`;
+    const itemPath = `${path}[L${pos}]`;
     const labelItem = arrayItemLabel(path, pos, value);
     children.push(mergeArrayItem(value, undefined, itemPath, diffMap, labelItem));
   }
   for (const { pos, value } of orphanRight) {
-    const itemPath = `${path}[${pos}]`;
+    const itemPath = `${path}[R${pos}]`;
     const labelItem = arrayItemLabel(path, pos, value);
     children.push(mergeArrayItem(undefined, value, itemPath, diffMap, labelItem));
   }

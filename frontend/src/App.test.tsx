@@ -73,6 +73,36 @@ async function setupDirectoryScan() {
   await act(async () => { fireEvent.click(screen.getAllByRole('button', { name: '浏览' })[1]); });
 }
 
+describe('App single-file pick (smoke)', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('single file mode: pick left → open called with directory:false, solo view appears', async () => {
+    vi.mocked(open).mockResolvedValueOnce('/test/photo.png');
+    vi.mocked(workbenchApi.inspectSingle).mockResolvedValueOnce({
+      side: 'left',
+      file_path: '/test/photo.png',
+      file_name: 'photo.png',
+      raw_json: '{}',
+      metadata: {},
+      error: null,
+    });
+
+    render(<App />);
+    // In single-file mode the welcome pane shows two "浏览" buttons; click the first (left).
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: '浏览' })[0]);
+    });
+
+    // open() must have been called with directory: false
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ directory: false }));
+
+    // After inspectSingle resolves the detail header (solo view) should appear
+    await waitFor(() => expect(document.querySelector('.detail-head')).not.toBeNull());
+    // The file name should be visible in the detail header
+    expect(document.querySelector('.detail-head__name')?.textContent).toContain('photo.png');
+  });
+});
+
 describe('App (three-column shell)', () => {
   beforeEach(() => localStorage.clear());
 
