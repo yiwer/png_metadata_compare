@@ -1,5 +1,5 @@
 // frontend/src/features/workbench/useWorkbench.ts
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { workbenchApi } from '../../lib/api';
 import type {
   BatchListItem,
@@ -87,6 +87,9 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   // Directory scans are long-running; this guards against a superseded scan
   // overwriting the progress/results of a newer one.
   const scanSeqRef = useRef(0);
+  // Selection calls are also async; this guards against a stale selectItem
+  // call (e.g. auto-select from a previous scan) clobbering a newer result.
+  const selectSeqRef = useRef(0);
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -136,6 +139,9 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
       setDirectoryContext(null);
       setError(null);
       setSlotBarCollapsed(false);
+      setSearchQuery('');
+      setSelectedItemId(null);
+      setErrorItem(null);
       // Set the dropped value into the new mode's slot, leaving the other slot empty.
       setInputsByMode(() => ({
         single: { left: '', right: '' },
@@ -169,13 +175,15 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     setInDirectorySubview(false);
   }
 
-  async function selectItem(item: BatchListItem) {
+  async function selectItem(item: BatchListItem, itemsOverride?: BatchListItem[]) {
+    const sid = ++selectSeqRef.current;
     setSelectedItemId(item.id);
     setErrorItem(null);
     setIsLoading(true);
     setError(null);
 
-    const differentItems = (directorySummary?.items ?? []).filter((i) => i.kind === 'different');
+    const allItems = itemsOverride ?? directorySummary?.items ?? [];
+    const differentItems = allItems.filter((i) => i.kind === 'different');
     const diffIndex = differentItems.findIndex((i) => i.id === item.id);
     setDirectoryContext(
       diffIndex >= 0 ? { index: diffIndex + 1, totalDifferent: differentItems.length } : null,
@@ -191,18 +199,21 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
         setView('directory-overview'); // Task 7 will change to 'error'
       } else if (item.kind === 'left_only' && item.left_path) {
         const result = await api.inspectSingle(item.left_path, 'left');
+        if (selectSeqRef.current !== sid) return;
         setSoloResult(result);
         setSoloSide('left');
         setView('solo');
         setViewMode('tree');
       } else if (item.kind === 'right_only' && item.right_path) {
         const result = await api.inspectSingle(item.right_path, 'right');
+        if (selectSeqRef.current !== sid) return;
         setSoloResult(result);
         setSoloSide('right');
         setView('solo');
         setViewMode('tree');
       } else if (item.left_path && item.right_path) {
         const result = await api.compareSingle(item.left_path, item.right_path);
+        if (selectSeqRef.current !== sid) return;
         setPairResult(result);
         setView('mirror');
         setViewMode('tree');
@@ -210,9 +221,9 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
         setError('无法打开此项目：路径缺失');
       }
     } catch (err) {
-      setError(formatError(err));
+      if (selectSeqRef.current === sid) setError(formatError(err));
     } finally {
-      setIsLoading(false);
+      if (selectSeqRef.current === sid) setIsLoading(false);
     }
   }
 
@@ -238,6 +249,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
 
   async function runAuto() {
     const runId = ++scanSeqRef.current;
+    selectSeqRef.current++; // invalidate any in-flight selectItem from a previous run
     setIsLoading(true);
     setError(null);
     try {
@@ -291,7 +303,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
           summary.items.filter((i) => defaultFilter === 'all' || i.kind === defaultFilter),
           sortKey,
         );
-        if (visible[0]) void selectItem(visible[0]);
+        if (visible[0]) await selectItem(visible[0], summary.items);
       } else {
         setView('welcome');
         setSlotBarCollapsed(false);
@@ -310,11 +322,14 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
   const runCompare = runAuto;
 
   const query = searchQuery.trim().toLowerCase();
-  const filteredItems = sortItems(
-    (directorySummary?.items ?? [])
-      .filter((i) => activeFilter === 'all' || i.kind === activeFilter)
-      .filter((i) => !query || i.label.toLowerCase().includes(query)),
-    sortKey,
+  const filteredItems = useMemo(
+    () => sortItems(
+      (directorySummary?.items ?? [])
+        .filter((i) => activeFilter === 'all' || i.kind === activeFilter)
+        .filter((i) => !query || i.label.toLowerCase().includes(query)),
+      sortKey,
+    ),
+    [directorySummary, activeFilter, query, sortKey],
   );
 
   // Keyboard shortcuts

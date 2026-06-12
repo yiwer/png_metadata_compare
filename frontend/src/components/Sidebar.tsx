@@ -1,6 +1,6 @@
 // frontend/src/components/Sidebar.tsx
 import { memo, useEffect, useRef, useState } from 'react';
-import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import type { ActiveFilter, SortKey } from '../features/workbench/useWorkbench';
 import type { BatchListItem, BatchListItemKind, DirectorySummary, ScanProgress } from '../lib/types';
 
@@ -60,8 +60,13 @@ export function Sidebar({
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(null); };
     window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('keydown', onKey);
+    };
   }, [menu]);
 
   const counts = summary?.counts ?? null;
@@ -126,7 +131,7 @@ export function Sidebar({
           <div className="sidebar__empty">
             {searchQuery
               ? <><span>无匹配</span> <button type="button" onClick={() => onSearch('')}>清空搜索</button></>
-              : summary && counts!.different === 0 && activeFilter === 'all' && totalPairs > 0 && summary.items.every((i) => i.kind === 'identical')
+              : counts && counts.different === 0 && activeFilter === 'all' && totalPairs > 0 && summary?.items.every((i) => i.kind === 'identical')
                 ? '两侧完全一致'
                 : '无条目'}
           </div>
@@ -143,13 +148,13 @@ export function Sidebar({
       </div>
 
       {menu && (
-        <div className="sidebar__menu" style={{ left: menu.x, top: menu.y }}>
+        <div className="sidebar__menu" style={{ left: Math.min(menu.x, window.innerWidth - 180), top: Math.min(menu.y, window.innerHeight - 72) }}>
           <button type="button" onClick={() => {
             void navigator.clipboard?.writeText([menu.item.left_path, menu.item.right_path].filter(Boolean).join('\n'));
           }}>复制路径</button>
           <button type="button" onClick={() => {
             const p = menu.item.left_path ?? menu.item.right_path ?? menu.item.label;
-            void revealItemInDir(p).catch(() => openPath(p));
+            void revealItemInDir(p).catch(() => { /* 文件可能已被移动/删除：静默 */ });
           }}>在资源管理器中显示</button>
         </div>
       )}

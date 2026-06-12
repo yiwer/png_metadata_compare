@@ -359,4 +359,37 @@ describe('sidebar selection & search (redesign)', () => {
     expect(result.current.errorItem?.id).toBe('e1');
     expect(api.compareSingle).not.toHaveBeenCalled();
   });
+
+  it('a stale auto-select compare cannot clobber a newer scan', async () => {
+    const resolvers: Array<(v: PairInspection) => void> = [];
+    const api = makeApi({
+      compareSingle: vi.fn().mockImplementation(() => new Promise((res) => { resolvers.push(res); })),
+    });
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
+    let firstRun!: Promise<void>;
+    act(() => { firstRun = result.current.runCompare(); });
+    await act(async () => { await Promise.resolve(); }); // scan#1 完成，auto-select#1 挂起
+    expect(resolvers).toHaveLength(1);
+    let secondRun!: Promise<void>;
+    act(() => { secondRun = result.current.runCompare(); }); // scan#2 开始 → select#1 过期
+    await act(async () => { await Promise.resolve(); });
+    expect(resolvers).toHaveLength(2);
+    await act(async () => { resolvers[0](mockInspection); }); // 旧 compare 迟到
+    expect(result.current.pairResult).toBeNull();
+    expect(result.current.isLoading).toBe(true);
+    await act(async () => { resolvers[1](mockInspection); await secondRun; await firstRun; });
+    expect(result.current.pairResult).toBe(mockInspection);
+  });
+
+  it('auto-select computes directoryContext from the fresh summary', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/left'); result.current.setRightInput('/right'); });
+    await act(async () => { await result.current.runCompare(); });
+    // b.png 是 summary 中第 2 个 different 项
+    expect(result.current.directoryContext).toEqual({ index: 2, totalDifferent: 2 });
+  });
 });
