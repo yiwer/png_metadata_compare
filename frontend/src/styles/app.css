@@ -119,21 +119,28 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
   justify-content: space-between;
   gap: var(--sp-2);
 }
-.group-head--nested {
+.group-head[data-level="1"] {
   font-size: 10px;
-  background: transparent;
   color: var(--group-head-nested);
   border-left-color: var(--group-rule-nested);
+  margin: var(--sp-2) 0 2px;
+}
+.group-head[data-level="2"],
+.group-head[data-level="3"] {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  border-left-color: transparent;
   margin: var(--sp-2) 0 2px;
 }
 .group-head__count { color: var(--text-tertiary); font-size: 10px; letter-spacing: 0; text-transform: none; }
 .group-head__toggle { color: var(--text-tertiary); margin-right: var(--sp-1); }
 
 /* Status-colored headers */
-.group-head--add { background: var(--add-bg); border-left-color: var(--add-text); color: var(--add-text); }
-.group-head--rem { background: var(--rem-bg); border-left-color: var(--rem-text); color: var(--rem-text); }
-.group-head--mod { background: var(--mod-bg); border-left-color: var(--mod-new); color: var(--mod-new); }
-.group-head--err { background: rgba(255, 124, 224, 0.10); border-left-color: var(--err-text); color: var(--err-text); }
+.group-head--add[data-level] { background: var(--add-bg); border-left-color: var(--add-text); color: var(--add-text); }
+.group-head--rem[data-level] { background: var(--rem-bg); border-left-color: var(--rem-text); color: var(--rem-text); }
+.group-head--mod[data-level] { background: var(--mod-bg); border-left-color: var(--mod-new); color: var(--mod-new); }
+.group-head--err[data-level] { background: rgba(255, 124, 224, 0.10); border-left-color: var(--err-text); color: var(--err-text); }
 
 /* Used by RawJsonSplit and ImageSplit__panes */
 .mirror-grid {
