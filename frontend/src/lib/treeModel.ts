@@ -121,6 +121,8 @@ export interface MirrorRow {
   count?: number;
   leftValue: string | null;
   rightValue: string | null;
+  leftRaw?: JsonValue;
+  rightRaw?: JsonValue;
   status: DiffStatus;
   isUnknown: boolean;
   defaultOpen: boolean;
@@ -217,6 +219,8 @@ function mergeObject(
     variant,
     leftValue: null,
     rightValue: null,
+    leftRaw: left ?? undefined,
+    rightRaw: right ?? undefined,
     status,
     isUnknown: path !== '' && !isKnownField(path),
     defaultOpen: defaultOpenFor(variant),
@@ -285,6 +289,8 @@ function mergeArray(
     count: children.length,
     leftValue: null,
     rightValue: null,
+    leftRaw: left,
+    rightRaw: right,
     status,
     isUnknown: !isKnownField(path),
     defaultOpen: false,
@@ -408,6 +414,8 @@ function mergeLeaf(
     label: labelOverride ?? fieldLabel(path),
     leftValue: formatValue(path, isBlank(left) ? null : left),
     rightValue: formatValue(path, isBlank(right) ? null : right),
+    leftRaw: left,
+    rightRaw: right,
     status,
     isUnknown: !isKnownField(path),
     defaultOpen: true,

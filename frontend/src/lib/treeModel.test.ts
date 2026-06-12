@@ -281,6 +281,30 @@ describe('buildMirrorRows', () => {
   });
 });
 
+describe('buildMirrorRows raw payloads', () => {
+  it('carries leftRaw/rightRaw on leaves and groups', () => {
+    const left = { StopName: '翻身地铁站', Lines: [{ LineName: 'B932', Direction: '东' }] };
+    const right = { StopName: '翻身地铁站', Lines: [{ LineName: 'B932', Direction: '东' }] };
+    const [root] = buildMirrorRows(left as never, right as never, null);
+    const stopName = root.children!.find((r) => r.path === 'StopName')!;
+    expect(stopName.leftRaw).toBe('翻身地铁站');
+    expect(stopName.rightRaw).toBe('翻身地铁站');
+    const lines = root.children!.find((r) => r.path === 'Lines')!;
+    expect(lines.leftRaw).toEqual(left.Lines);
+    expect(lines.rightRaw).toEqual(right.Lines);
+    const item = lines.children![0];
+    expect(item.leftRaw).toEqual(left.Lines[0]);
+    expect(item.rightRaw).toEqual(right.Lines[0]);
+  });
+
+  it('leaves missing side raw as undefined', () => {
+    const [root] = buildMirrorRows({ A: 1 } as never, {} as never, null);
+    const a = root.children!.find((r) => r.path === 'A')!;
+    expect(a.leftRaw).toBe(1);
+    expect(a.rightRaw).toBeUndefined();
+  });
+});
+
 describe('hasDiffDeep', () => {
   it('returns true when any descendant is non-unchanged', () => {
     const row = {
