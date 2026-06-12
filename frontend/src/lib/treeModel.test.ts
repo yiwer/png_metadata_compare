@@ -290,11 +290,11 @@ describe('buildMirrorRows raw payloads', () => {
     expect(stopName.leftRaw).toBe('翻身地铁站');
     expect(stopName.rightRaw).toBe('翻身地铁站');
     const lines = root.children!.find((r) => r.path === 'Lines')!;
-    expect(lines.leftRaw).toEqual(left.Lines);
-    expect(lines.rightRaw).toEqual(right.Lines);
+    expect(lines.leftRaw).toBe(left.Lines);
+    expect(lines.rightRaw).toBe(right.Lines);
     const item = lines.children![0];
-    expect(item.leftRaw).toEqual(left.Lines[0]);
-    expect(item.rightRaw).toEqual(right.Lines[0]);
+    expect(item.leftRaw).toBe(left.Lines[0]);
+    expect(item.rightRaw).toBe(right.Lines[0]);
   });
 
   it('leaves missing side raw as undefined', () => {
@@ -302,6 +302,14 @@ describe('buildMirrorRows raw payloads', () => {
     const a = root.children!.find((r) => r.path === 'A')!;
     expect(a.leftRaw).toBe(1);
     expect(a.rightRaw).toBeUndefined();
+  });
+
+  it('one-side-only array keeps absent side raw undefined (not [])', () => {
+    const right = { Lines: [{ LineName: 'M197', Direction: '北' }] };
+    const [root] = buildMirrorRows({}, right, null);
+    const lines = root.children!.find((r) => r.path === 'Lines')!;
+    expect(lines.leftRaw).toBeUndefined();
+    expect(lines.rightRaw).toBe(right.Lines);
   });
 });
 

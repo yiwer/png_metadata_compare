@@ -164,12 +164,17 @@ function mergeAny(
   const rightIsArr = Array.isArray(right);
 
   if (leftIsArr || rightIsArr) {
-    return mergeArray(
+    const row = mergeArray(
       (leftIsArr ? left : []) as JsonValue[],
       (rightIsArr ? right : []) as JsonValue[],
       path,
       diffMap,
     );
+    // 合成的 [] 只用于对齐子项；raw 必须反映真实缺失，否则
+    // 「复制 JSON 子树」的 leftRaw ?? rightRaw 会被空数组截胡。
+    row.leftRaw = leftIsArr ? left : undefined;
+    row.rightRaw = rightIsArr ? right : undefined;
+    return row;
   }
 
   if (leftIsObj || rightIsObj) {
