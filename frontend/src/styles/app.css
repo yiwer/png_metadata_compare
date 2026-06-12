@@ -734,4 +734,25 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 .group-head:hover .utree__copy, .group-head:focus-within .utree__copy { opacity: 1; }
 .utree__copy:hover { color: var(--accent); }
 @keyframes utree-flash { 0% { outline: 2px solid var(--accent); } 100% { outline: 2px solid transparent; } }
+
+/* ============ DiffRail（右侧差异栏） ============ */
+.rail { width: 220px; flex: none; display: flex; flex-direction: column; background: var(--bg-panel); border-left: 1px solid var(--border-default); min-height: 0; }
+.rail--collapsed { width: 28px; align-items: center; padding-top: var(--sp-3); cursor: pointer; border: none; border-left: 1px solid var(--border-default); color: var(--text-secondary); font: var(--fs-xs)/1 var(--font-mono); }
+.rail__collapsed-count { background: var(--mod-bg); color: var(--mod-new); border-radius: var(--r-sm); padding: 2px 5px; }
+.rail__head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--border-subtle); color: var(--text-primary); font: 500 var(--fs-sm)/1 var(--font-ui); }
+.rail__toggle { border: none; background: none; color: var(--text-tertiary); cursor: pointer; }
+.rail__toggle:hover { color: var(--accent); }
+.rail__body { flex: 1; overflow-y: auto; padding: var(--sp-2); }
+.rail__empty { color: var(--text-tertiary); font: var(--fs-sm)/1 var(--font-ui); padding: var(--sp-3); }
+.rail__group { margin-bottom: var(--sp-3); }
+.rail__group-name { color: var(--text-tertiary); font: var(--fs-xs)/var(--lh-xs) var(--font-ui); padding: 2px 6px; }
+.rail__entry { display: block; width: 100%; text-align: left; border: none; background: none; cursor: pointer; border-radius: var(--r-sm); padding: 3px 8px; font: var(--fs-sm)/var(--lh-sm) var(--font-mono); color: var(--text-secondary); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.rail__entry:hover { background: var(--bg-hover); }
+.rail__entry--mod { background: var(--mod-bg); color: var(--mod-new); }
+.rail__entry--add { color: var(--add-text); }
+.rail__entry--rem { color: var(--rem-text); }
+.rail__entry--err { color: var(--err-text); }
+.rail__foot { border-top: 1px solid var(--border-subtle); padding: var(--sp-2); }
+.rail__copy { width: 100%; border: 1px solid var(--border-default); background: none; color: var(--text-secondary); border-radius: var(--r-sm); padding: 5px 0; cursor: pointer; font: var(--fs-sm)/1 var(--font-ui); }
+.rail__copy:hover { border-color: var(--accent); color: var(--accent); }
 .utree__row--flash { animation: utree-flash 0.9s ease-out 1; }
