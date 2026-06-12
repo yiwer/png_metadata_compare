@@ -52,8 +52,8 @@ export function DiffRail({
         {groups.map(([group, list]) => (
           <div key={group} className="rail__group">
             <div className="rail__group-name">{group}</div>
-            {list.map((e) => (
-              <button key={e.path} type="button"
+            {list.map((e, i) => (
+              <button key={`${e.path}::${i}`} type="button"
                 className={`rail__entry ${ENTRY_CLASS[e.status] ?? ''}`.trim()}
                 onClick={() => onJump(e.path)} title={e.label}>
                 {PREFIX[e.status] ?? ''} · {e.label}

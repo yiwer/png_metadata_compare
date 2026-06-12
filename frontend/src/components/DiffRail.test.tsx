@@ -4,6 +4,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { DiffRail } from './DiffRail';
 import type { DiffEntry } from '../lib/diffList';
 
+// topGroup '线路 1 · B932' 与 buildDiffEntries 的就近分组输出对应：
+// ancestors=['停靠线路','线路 1 · B932'] → slice(1).join(' › ') = '线路 1 · B932'
 const entries: DiffEntry[] = [
   { path: 'Lines[B932|东].Direction', topGroup: '线路 1 · B932', label: '开往方向', status: 'modified', leftValue: 'A', rightValue: 'B' },
   { path: 'Lines[B932|东].NextStop', topGroup: '线路 1 · B932', label: '下一站', status: 'removed', leftValue: 'C', rightValue: '—' },

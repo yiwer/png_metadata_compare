@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildDiffEntries, buildDiffText } from './diffList';
 import { buildMirrorRows } from './treeModel';
-import type { DiffNode } from './types';
+import type { DiffNode, JsonValue } from './types';
 
 const diff = (children: DiffNode[]): DiffNode =>
   ({ path: '', status: 'modified', left_value: null, right_value: null, summary: '', children });
@@ -20,17 +20,21 @@ describe('buildDiffEntries', () => {
     ]));
     const entries = buildDiffEntries(rows);
     expect(entries).toHaveLength(2);
-    expect(entries[0].topGroup).toContain('线路');
+    // 就近分组：ancestors=['停靠线路','线路 1 · B932'] → topGroup='线路 1 · B932'（丢弃顶层容器名）
+    expect(entries[0].topGroup).toBe('线路 1 · B932');
+    expect(entries[0].label).toBe('开往方向');
     expect(entries.map((e) => e.status)).toEqual(['modified', 'removed']);
   });
 
   it('counts an array item that exists on one side as a single unit', () => {
-    const left = { Lines: [] as unknown[] };
+    const left = { Lines: [] as JsonValue[] };
     const right = { Lines: [{ LineName: 'M197', Direction: '北' }] };
     const rows = buildMirrorRows(left, right, diff([node('Lines[M197|北]', 'added')]));
     const entries = buildDiffEntries(rows);
     expect(entries).toHaveLength(1);
     expect(entries[0].status).toBe('added');
+    // ancestors=['停靠线路']，深度 1 → topGroup='停靠线路'
+    expect(entries[0].topGroup).toBe('停靠线路');
   });
 });
 
@@ -46,5 +50,14 @@ describe('buildDiffText', () => {
       '线路 1 · B932 › 下一站: 尚都花园（仅左）',
       '中文站名: 新站（仅右）',
     ]);
+  });
+
+  it('whole-item add/remove copies without literal null', () => {
+    const left = { Lines: [] as JsonValue[] };
+    const right = { Lines: [{ LineName: 'M197', Direction: '北' }] };
+    const rows = buildMirrorRows(left, right, diff([node('Lines[M197|北]', 'added')]));
+    const text = buildDiffText(buildDiffEntries(rows));
+    expect(text).not.toContain('null');
+    expect(text).toContain('（仅右侧整项）');
   });
 });

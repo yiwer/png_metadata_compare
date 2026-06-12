@@ -36,11 +36,16 @@ export function buildDiffEntries(rows: MirrorRow[]): DiffEntry[] {
 }
 
 function entryFor(r: MirrorRow, ancestors: string[], leafLabel: string): DiffEntry {
-  const [top, ...rest] = ancestors;
+  // 就近分组：丢弃冗余的顶层容器名（如「停靠线路」——线路条目的标签自带线路身份），
+  // 深度 1 时直接用该祖先；深度 ≥2 时用去掉首层后的链。
+  const topGroup =
+    ancestors.length === 0 ? '' :
+    ancestors.length === 1 ? ancestors[0] :
+    ancestors.slice(1).join(' › ');
   return {
     path: r.path,
-    topGroup: top ?? '',
-    label: [...rest, leafLabel].join(' › '),
+    topGroup,
+    label: leafLabel,
     status: r.status,
     leftValue: r.leftValue,
     rightValue: r.rightValue,
@@ -52,9 +57,13 @@ export function buildDiffText(entries: DiffEntry[]): string {
     .map((e) => {
       const name = e.topGroup ? `${e.topGroup} › ${e.label}` : e.label;
       if (e.status === 'modified') return `${name}: ${e.leftValue} → ${e.rightValue}`;
-      if (e.status === 'removed') return `${name}: ${e.leftValue}（仅左）`;
-      if (e.status === 'added') return `${name}: ${e.rightValue}（仅右）`;
-      return `${name}: ${e.leftValue ?? e.rightValue ?? ''}（${e.status}）`;
+      if (e.status === 'removed') {
+        return e.leftValue !== null ? `${name}: ${e.leftValue}（仅左）` : `${name}（仅左侧整项）`;
+      }
+      if (e.status === 'added') {
+        return e.rightValue !== null ? `${name}: ${e.rightValue}（仅右）` : `${name}（仅右侧整项）`;
+      }
+      return `${name}: ${e.leftValue ?? e.rightValue ?? ''}（错误）`;
     })
     .join('\n');
 }
