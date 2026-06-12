@@ -38,7 +38,6 @@
   /* Group title */
   --group-head:        #d6b97b;
   --group-rule:        rgba(214, 185, 123, 0.15);
-  --group-bg:          transparent; /* intentional: graphite palette removes group section tint */
   --group-head-nested: rgba(214, 185, 123, 0.75);
   --group-rule-nested: rgba(214, 185, 123, 0.40);
 
