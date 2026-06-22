@@ -29,7 +29,7 @@ export function WelcomePane({ mode, onApplyPair }: {
   return (
     <div className="welcome2">
       <div className="welcome2__title">PNG Compare</div>
-      <p className="welcome2__noun">拖入{noun}，或点击浏览</p>
+      <p className="welcome2__noun">拖入{noun}，或在上方选择</p>
 
       {recent.length > 0 && (
         <div className="welcome2__recent">

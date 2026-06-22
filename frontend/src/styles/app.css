@@ -398,11 +398,6 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 
 /* ============ Sidebar（主从布局左栏） ============ */
 .sidebar { width: 260px; flex: none; display: flex; flex-direction: column; background: var(--bg-panel); border-right: 1px solid var(--border-default); min-height: 0; position: relative; }
-.sidebar__slots { padding: var(--sp-2); border-bottom: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 4px; }
-.sidebar__slot { display: flex; align-items: center; gap: 6px; }
-.sidebar__slot-side { color: var(--text-tertiary); font: var(--fs-xs)/1 var(--font-ui); flex: none; }
-.sidebar__slot-path { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); color: var(--text-secondary); font: var(--fs-sm)/1.6 var(--font-mono); padding: 2px 8px; cursor: pointer; }
-.sidebar__slot-path:hover { border-color: var(--accent); }
 .sidebar__search { padding: var(--sp-2); }
 .sidebar__search input { width: 100%; box-sizing: border-box; background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: var(--r-sm); color: var(--text-primary); font: var(--fs-sm)/1.6 var(--font-mono); padding: 4px 8px; }
 .sidebar__search input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -445,10 +440,6 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 .welcome2 { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-5); height: 100%; padding: var(--sp-6); }
 .welcome2__title { font: 500 var(--fs-2xl)/var(--lh-2xl) var(--font-ui); color: var(--text-primary); }
 .welcome2__noun { color: var(--text-secondary); font: var(--fs-md)/var(--lh-md) var(--font-ui); }
-.welcome2__slots { display: flex; gap: var(--sp-4); width: min(720px, 90%); }
-.welcome2__slot { flex: 1; border: 1px dashed var(--border-emph); border-radius: var(--r-md); padding: var(--sp-5); display: flex; gap: 8px; align-items: center; justify-content: center; color: var(--text-secondary); font: var(--fs-md)/var(--lh-md) var(--font-ui); }
-.welcome2__slot button { border: 1px solid var(--border-default); background: var(--bg-elevated); color: var(--text-primary); border-radius: var(--r-sm); padding: 3px 12px; cursor: pointer; }
-.welcome2__slot button:hover { border-color: var(--accent); }
 .welcome2__recent { width: min(560px, 90%); display: flex; flex-direction: column; gap: 2px; }
 .welcome2__recent-title { color: var(--text-tertiary); font: var(--fs-xs)/var(--lh-xs) var(--font-ui); margin-bottom: 4px; }
 .welcome2__recent-row { display: flex; align-items: center; gap: 4px; }
@@ -460,12 +451,6 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 .welcome2__recent-del:hover { color: var(--rem-text); }
 .welcome2__hint { color: var(--text-tertiary); font: var(--fs-sm)/2 var(--font-ui); }
 .welcome2__hint kbd { background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: var(--r-sm); padding: 0 5px; font-family: var(--font-mono); }
-
-/* ============ Sidebar pick-menu ============ */
-.sidebar__pickmenu { position: absolute; top: 60px; left: 8px; right: 8px; z-index: 15; background: var(--bg-elevated); border: 1px solid var(--border-emph); border-radius: var(--r-md); padding: 6px; display: flex; flex-direction: column; gap: 4px; }
-.sidebar__pickmenu button { text-align: left; border: none; background: none; color: var(--text-secondary); font: var(--fs-sm)/1.9 var(--font-mono); padding: 2px 8px; border-radius: var(--r-sm); cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.sidebar__pickmenu button:hover { background: var(--bg-hover); color: var(--text-primary); }
-.sidebar__pickmenu input { background: var(--bg-page); border: 1px solid var(--border-default); border-radius: var(--r-sm); color: var(--text-primary); font: var(--fs-sm)/1.6 var(--font-mono); padding: 3px 8px; }
 
 /* ============ 三栏骨架 / 详情头部 / 错误卡 ============ */
 .shell-body { display: flex; flex: 1; min-height: 0; }
