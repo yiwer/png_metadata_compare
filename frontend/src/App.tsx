@@ -128,10 +128,10 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar" data-tauri-drag-region>
-        <div className="topbar-left">
-          <img className="brand-icon" src="/app-icon.png" alt="" draggable={false} />
-          <span className="brand">PNG Compare</span>
-          <div className="topbar-vsep" />
+        <div className="topbar-left" data-tauri-drag-region>
+          <img className="brand-icon" src="/app-icon.png" alt="" draggable={false} data-tauri-drag-region />
+          <span className="brand" data-tauri-drag-region>PNG Compare</span>
+          <div className="topbar-vsep" data-tauri-drag-region />
           <div className="mode-toggle" role="group" aria-label="模式">
             <button type="button" className={`mode-btn${wb.mode === 'single' ? ' mode-btn--active' : ''}`}
               onClick={() => wb.setMode('single')}>单文件</button>
@@ -143,7 +143,7 @@ export default function App() {
               onClick={wb.toggleSidebarCollapsed}>{wb.sidebarCollapsed ? '⇤' : '⇥'}</button>
           )}
         </div>
-        <div className="topbar-right">
+        <div className="topbar-right" data-tauri-drag-region>
           <div className="win-controls">
             <button type="button" className="win-btn" onClick={() => void win.minimize()} aria-label="最小化">─</button>
             <button type="button" className="win-btn" onClick={() => void win.toggleMaximize()} aria-label="最大化">□</button>

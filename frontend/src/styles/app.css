@@ -51,9 +51,9 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
     linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.25) 100%);
   border-bottom: 1px solid var(--border-default);
   user-select: none;
-  -webkit-app-region: drag;
+  /* Window dragging is handled by Tauri's `data-tauri-drag-region` attribute
+     (see App.tsx topbar) — `-webkit-app-region` is an Electron-only no-op in WebView2. */
 }
-.topbar button { -webkit-app-region: no-drag; }
 .topbar-left   { display: flex; align-items: center; gap: var(--sp-3); flex: 0 0 auto; height: 100%; }
 .topbar-center { flex: 1; display: flex; justify-content: center; gap: var(--sp-2); color: var(--text-secondary); font-size: var(--fs-sm); }
 .topbar-right  { flex: 0 0 auto; }
