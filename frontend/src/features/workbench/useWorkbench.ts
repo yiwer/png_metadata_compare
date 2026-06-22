@@ -146,6 +146,23 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     toastTimerRef.current = setTimeout(() => setToast(null), 2200);
   }
 
+  const resetToWelcome = useCallback(() => {
+    setView('welcome');
+    setPairResult(null);
+    setSoloResult(null);
+    setSoloSide(null);
+    setDirectorySummary(null);
+    setSelectedItemId(null);
+    setErrorItem(null);
+  }, []);
+
+  const clearSide = useCallback((side: Side) => {
+    const other = side === 'left' ? activeInputs.right : activeInputs.left;
+    if (side === 'left') setLeftInput(''); else setRightInput('');
+    setError(null);
+    if (!other) resetToWelcome();
+  }, [activeInputs, resetToWelcome]);
+
   function toggleDiffHighlight() { setDiffHighlight((v) => !v); }
   function toggleOnlyDiff() { setOnlyDiff((v) => !v); }
   function toggleSidebarCollapsed() { setSidebarCollapsed((v) => !v); }
@@ -258,7 +275,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
           setView('solo');
           setViewMode('tree');
         } else {
-          setView('welcome');
+          resetToWelcome();
         }
         return;
       }
@@ -284,7 +301,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
         if (visible[0]) await selectItem(visible[0]);
         else setView('welcome');
       } else {
-        setView('welcome');
+        resetToWelcome();
       }
     } catch (err) {
       if (scanSeqRef.current === runId) {
@@ -371,6 +388,7 @@ export function useWorkbench(api: WorkbenchApi = workbenchApi) {
     setSortKey,
     selectedItemId,
     selectItem,
+    clearSide,
     selectNext,
     selectPrev,
     errorItem,

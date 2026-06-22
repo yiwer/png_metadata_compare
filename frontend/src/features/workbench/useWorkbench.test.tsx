@@ -377,6 +377,52 @@ describe('sidebar selection & search (redesign)', () => {
   });
 });
 
+describe('clearSide', () => {
+  it('clears that side input', () => {
+    const { result } = renderHook(() => useWorkbench(makeApi()));
+    act(() => { result.current.setLeftInput('/a.png'); });
+    act(() => { result.current.clearSide('left'); });
+    expect(result.current.leftInput).toBe('');
+  });
+
+  it('clearing the last remaining side resets to welcome and clears results', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setLeftInput('/a.png'); });
+    await act(async () => { await result.current.runAuto(); });
+    expect(result.current.view).toBe('solo');
+    act(() => { result.current.clearSide('left'); });
+    expect(result.current.leftInput).toBe('');
+    expect(result.current.view).toBe('welcome');
+    expect(result.current.soloResult).toBeNull();
+  });
+
+  it('single mirror: clearing one side then runAuto shows the remaining image (solo)', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setLeftInput('/a.png'); result.current.setRightInput('/b.png'); });
+    await act(async () => { await result.current.runAuto(); });
+    expect(result.current.view).toBe('mirror');
+    act(() => { result.current.clearSide('right'); });
+    await act(async () => { await result.current.runAuto(); });
+    expect(result.current.view).toBe('solo');
+    expect(result.current.soloSide).toBe('left');
+  });
+
+  it('directory: clearing one folder then runAuto returns to welcome with summary cleared', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useWorkbench(api));
+    act(() => { result.current.setMode('directory'); });
+    act(() => { result.current.setLeftInput('/L'); result.current.setRightInput('/R'); });
+    await act(async () => { await result.current.runCompare(); });
+    expect(result.current.directorySummary).not.toBeNull();
+    act(() => { result.current.clearSide('left'); });
+    await act(async () => { await result.current.runAuto(); });
+    expect(result.current.view).toBe('welcome');
+    expect(result.current.directorySummary).toBeNull();
+  });
+});
+
 describe('MRU writes', () => {
   beforeEach(() => localStorage.clear());
 
