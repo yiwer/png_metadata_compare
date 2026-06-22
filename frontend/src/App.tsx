@@ -4,6 +4,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openPath } from '@tauri-apps/plugin-opener';
+import { useImageTransform } from './lib/useImageTransform';
 import { workbenchApi } from './lib/api';
 import { Sidebar } from './components/Sidebar';
 import { UnifiedTree } from './components/UnifiedTree';
@@ -325,52 +326,27 @@ function SingleImage({ path, name }: { path: string; name: string }) {
 }
 
 function ImageSplit({ leftPath, rightPath, leftName, rightName }: { leftPath: string; rightPath: string; leftName: string; rightName: string; }) {
-  const [zoom, setZoom] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
-
-  const onWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-    setZoom((z) => Math.min(20, Math.max(0.1, z * factor)));
-  };
-  const onMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    dragRef.current = { startX: e.clientX, startY: e.clientY, baseX: offset.x, baseY: offset.y };
-  };
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (!dragRef.current) return;
-    setOffset({
-      x: dragRef.current.baseX + (e.clientX - dragRef.current.startX),
-      y: dragRef.current.baseY + (e.clientY - dragRef.current.startY),
-    });
-  };
-  const endDrag = () => { dragRef.current = null; };
-  const reset = () => { setZoom(1); setOffset({ x: 0, y: 0 }); };
-
-  const transform = `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`;
-  const dragging = dragRef.current !== null;
-
+  const t = useImageTransform();
   return (
     <div className="image-split">
       <div className="image-split__toolbar">
-        <button type="button" className="controlbar__btn" onClick={() => setZoom((z) => Math.max(0.1, z / 1.25))}>−</button>
-        <span className="controlbar__summary" style={{ minWidth: 56, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
-        <button type="button" className="controlbar__btn" onClick={() => setZoom((z) => Math.min(20, z * 1.25))}>＋</button>
-        <button type="button" className="controlbar__btn" onClick={reset}>重置</button>
+        <button type="button" className="controlbar__btn" onClick={t.zoomOut}>−</button>
+        <span className="controlbar__summary" style={{ minWidth: 56, textAlign: 'center' }}>{Math.round(t.zoom * 100)}%</span>
+        <button type="button" className="controlbar__btn" onClick={t.zoomIn}>＋</button>
+        <button type="button" className="controlbar__btn" onClick={t.reset}>重置</button>
         <span className="controlbar__spacer" />
         <span className="controlbar__summary">滚轮缩放 · 拖拽平移（左右同步）</span>
       </div>
       <div
-        className={`image-split__panes${dragging ? ' image-split__panes--dragging' : ''}`}
-        onWheel={onWheel}
-        onMouseDown={onMouseDown}
-        onMouseMove={onMouseMove}
-        onMouseUp={endDrag}
-        onMouseLeave={endDrag}
+        className={`image-split__panes${t.dragging ? ' image-split__panes--dragging' : ''}`}
+        onWheel={t.onWheel}
+        onMouseDown={t.onMouseDown}
+        onMouseMove={t.onMouseMove}
+        onMouseUp={t.endDrag}
+        onMouseLeave={t.endDrag}
       >
-        <ImagePane key={leftPath} path={leftPath} name={leftName} transform={transform} />
-        <ImagePane key={rightPath} path={rightPath} name={rightName} transform={transform} />
+        <ImagePane key={leftPath} path={leftPath} name={leftName} transform={t.transform} />
+        <ImagePane key={rightPath} path={rightPath} name={rightName} transform={t.transform} />
       </div>
     </div>
   );
