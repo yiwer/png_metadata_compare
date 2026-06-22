@@ -492,3 +492,74 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 .error-card__open:hover { border-color: var(--accent); color: var(--accent); }
 .image-pane__broken { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-tertiary); font: var(--fs-sm)/1 var(--font-ui); }
 .sidebar__allsame { margin: 4px 8px; padding: 4px 8px; border-radius: var(--r-sm); background: var(--add-bg); color: var(--add-text); font: var(--fs-xs)/var(--lh-xs) var(--font-ui); }
+
+/* === Selection bar === */
+.selbar {
+  display: flex;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-page);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.selbar__slot {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+.selbar__slot--empty { border-style: dashed; background: transparent; }
+.selbar__slot--filled { box-shadow: inset 0 0 0 1px rgba(91,157,217,.18); }
+.selbar__side {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+.selbar__slot-main {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.selbar__slot--empty .selbar__slot-main { color: var(--text-secondary); }
+.selbar__clear {
+  width: 19px; height: 19px; line-height: 18px; text-align: center;
+  border: none; border-radius: 5px;
+  background: var(--border-default); color: var(--text-secondary); cursor: pointer;
+}
+.selbar__menu {
+  position: absolute;
+  top: 44px; left: 0; z-index: 20;
+  min-width: 240px;
+  padding: 5px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.5);
+}
+.selbar__menu button {
+  display: block; width: 100%; text-align: left;
+  background: none; border: none; color: inherit;
+  padding: 7px 9px; border-radius: 6px; font-size: var(--fs-sm); cursor: pointer;
+}
+.selbar__menu button:hover { background: var(--bg-page); }
+.selbar__menu input {
+  width: 100%; margin: 4px 0;
+  padding: 6px 9px;
+  background: var(--bg-page);
+  border: 1px solid var(--border-default);
+  border-radius: 6px; color: inherit; font-size: var(--fs-sm);
+}
