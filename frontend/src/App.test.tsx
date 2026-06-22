@@ -1,5 +1,5 @@
 // frontend/src/App.test.tsx
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from './App';
 import { workbenchApi } from './lib/api';
@@ -165,5 +165,26 @@ describe('App (three-column shell)', () => {
     await act(async () => { resolveSecond(PAIR); });
     expect(screen.queryByText('正在扫描目录…')).toBeNull();
     expect(document.querySelector('.detail-head')).not.toBeNull();
+  });
+
+  it('selection bar: pick a file via 浏览…, see solo view, then ✕ clears back to welcome', async () => {
+    vi.mocked(open).mockResolvedValueOnce('/test/photo.png');
+    vi.mocked(workbenchApi.inspectSingle).mockResolvedValueOnce({
+      side: 'left', file_path: '/test/photo.png', file_name: 'photo.png',
+      raw_json: '{}', metadata: {}, error: null,
+    });
+    render(<App />);
+    const bar = document.querySelector('.selbar') as HTMLElement;
+    // 打开左槽下拉 → 浏览…
+    await act(async () => {
+      fireEvent.click(bar.querySelector('[data-side="left"] .selbar__slot-main') as HTMLElement);
+    });
+    await act(async () => {
+      fireEvent.click(within(bar).getByRole('button', { name: '浏览…' }));
+    });
+    await waitFor(() => expect(document.querySelector('.detail-head')).not.toBeNull());
+    // ✕ 清除左侧 → 回欢迎页
+    fireEvent.click(screen.getByLabelText('清除左侧'));
+    await waitFor(() => expect(document.querySelector('.detail-head')).toBeNull());
   });
 });

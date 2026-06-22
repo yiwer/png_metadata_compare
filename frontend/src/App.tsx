@@ -11,6 +11,7 @@ import type { FocusRequest } from './components/UnifiedTree';
 import { DiffRail } from './components/DiffRail';
 import { WelcomePane } from './components/WelcomePane';
 import { useWorkbench } from './features/workbench/useWorkbench';
+import { SelectionBar } from './components/SelectionBar';
 import { buildMirrorRows } from './lib/treeModel';
 import { buildDiffEntries } from './lib/diffList';
 import type { BatchListItem } from './lib/types';
@@ -151,6 +152,18 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      <SelectionBar
+        mode={wb.mode}
+        leftInput={wb.leftInput}
+        rightInput={wb.rightInput}
+        onPickLeft={() => void handlePickLeft()}
+        onPickRight={() => void handlePickRight()}
+        onPastePath={(side, p) => wb.tryDropPath(side, p)}
+        onApplyPair={(l, r) => { wb.setLeftInput(l); wb.setRightInput(r); }}
+        onClear={(side) => wb.clearSide(side)}
+        onDrop={(side, p) => wb.tryDropPath(side, p)}
+      />
 
       {wb.error && <div className="banner banner--error">{wb.error}</div>}
 
