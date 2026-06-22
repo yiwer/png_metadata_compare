@@ -63,14 +63,24 @@ function summaryOf(items: BatchListItem[]): DirectorySummary {
   };
 }
 
-/** 切到目录模式并通过两次「浏览」把 /L、/R 填入，触发自动扫描。 */
+function openBarSlot(side: 'left' | 'right') {
+  const slot = document.querySelector(`.selbar__slot[data-side="${side}"] .selbar__slot-main`) as HTMLElement;
+  fireEvent.click(slot);
+}
+
+/** 切到目录模式并通过两次「浏览…」把 /L、/R 填入，触发自动扫描。 */
 async function setupDirectoryScan() {
   vi.mocked(workbenchApi.pickFolder!).mockResolvedValueOnce('/L').mockResolvedValueOnce('/R');
   render(<App />);
   fireEvent.click(screen.getByText('目录'));
-  // WelcomePane 在加载期间会卸载重挂，所以每次点击前重新查询按钮
-  await act(async () => { fireEvent.click(screen.getAllByRole('button', { name: '浏览' })[0]); });
-  await act(async () => { fireEvent.click(screen.getAllByRole('button', { name: '浏览' })[1]); });
+  await act(async () => { openBarSlot('left'); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: '浏览…' }));
+  });
+  await act(async () => { openBarSlot('right'); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: '浏览…' }));
+  });
 }
 
 describe('App single-file pick (smoke)', () => {
@@ -88,9 +98,11 @@ describe('App single-file pick (smoke)', () => {
     });
 
     render(<App />);
-    // In single-file mode the welcome pane shows two "浏览" buttons; click the first (left).
     await act(async () => {
-      fireEvent.click(screen.getAllByRole('button', { name: '浏览' })[0]);
+      (document.querySelector('.selbar__slot[data-side="left"] .selbar__slot-main') as HTMLElement).click();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '浏览…' }));
     });
 
     // open() must have been called with directory: false
@@ -111,11 +123,10 @@ describe('App (three-column shell)', () => {
     expect(screen.getAllByText(/PNG Compare/i).length).toBeGreaterThan(0);
   });
 
-  it('renders the welcome pane with pick slots on first load', () => {
+  it('renders the selection bar with two empty slots on first load', () => {
     render(<App />);
-    expect(screen.getByText(/拖入PNG 文件/)).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: '浏览' })).toHaveLength(2);
-    // 空载时既无目录侧栏也无详情头
+    expect(document.querySelector('.selbar')).not.toBeNull();
+    expect(screen.getAllByText(/点击选择PNG 文件/)).toHaveLength(2);
     expect(document.querySelector('.sidebar')).toBeNull();
     expect(document.querySelector('.detail-head')).toBeNull();
   });

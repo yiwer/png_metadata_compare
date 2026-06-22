@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { loadRecent, removeRecent } from '../lib/recentDirs';
 import type { RecentKind, RecentPair } from '../lib/recentDirs';
-import type { Side, WorkbenchMode } from '../lib/types';
+import type { WorkbenchMode } from '../lib/types';
 
 function basename(p: string): string {
   const m = p.match(/[^/\\]+$/);
@@ -17,40 +17,19 @@ function relTime(ts: number): string {
   return `${Math.round(hours / 24)} 天前`;
 }
 
-export function WelcomePane({
-  mode, onApplyPair, onDrop, onPickLeft, onPickRight,
-}: {
+export function WelcomePane({ mode, onApplyPair }: {
   mode: WorkbenchMode;
   onApplyPair(left: string, right: string): void;
-  onDrop(side: Side, path: string): void;
-  onPickLeft(): void;
-  onPickRight(): void;
 }) {
   const kind: RecentKind = mode === 'directory' ? 'dir' : 'file';
   const [recent, setRecent] = useState<RecentPair[]>(() => loadRecent(kind));
   useEffect(() => { setRecent(loadRecent(kind)); }, [kind]);
   const noun = mode === 'directory' ? '文件夹' : 'PNG 文件';
 
-  const dropHandler = (side: Side) => (e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files?.[0];
-    const p = (file as unknown as { path?: string })?.path;
-    if (p) onDrop(side, p);
-  };
-
   return (
     <div className="welcome2">
       <div className="welcome2__title">PNG Compare</div>
       <p className="welcome2__noun">拖入{noun}，或点击浏览</p>
-      <div className="welcome2__slots">
-        {(['left', 'right'] as const).map((side) => (
-          <div key={side} className="welcome2__slot"
-            onDragOver={(e) => e.preventDefault()} onDrop={dropHandler(side)}>
-            <span>{side === 'left' ? '左侧' : '右侧'}</span>
-            <button type="button" onClick={side === 'left' ? onPickLeft : onPickRight}>浏览</button>
-          </div>
-        ))}
-      </div>
 
       {recent.length > 0 && (
         <div className="welcome2__recent">

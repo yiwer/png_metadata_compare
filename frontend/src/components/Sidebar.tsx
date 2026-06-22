@@ -1,7 +1,6 @@
 // frontend/src/components/Sidebar.tsx
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
-import { loadRecent } from '../lib/recentDirs';
 import type { ActiveFilter, SortKey } from '../features/workbench/useWorkbench';
 import type { BatchListItem, BatchListItemKind, DirectorySummary, ScanProgress } from '../lib/types';
 
@@ -20,19 +19,11 @@ const CHIPS: { id: ActiveFilter; label: (c: DirectorySummary['counts']) => strin
   { id: 'all', label: (c) => `全部 ${c.identical + c.different + c.left_only + c.right_only + c.error}` },
 ];
 
-function basename(p: string): string {
-  const m = p.match(/[^/\\]+$/);
-  return m ? m[0] : p;
-}
-
 export function Sidebar({
-  leftDir, rightDir, summary, filteredItems, activeFilter, searchQuery, sortKey,
+  summary, filteredItems, activeFilter, searchQuery, sortKey,
   selectedItemId, isLoading, scanProgress,
-  onFilter, onSearch, onSort, onSelect, onPickLeft, onPickRight, onCancelScan,
-  onApplyPair, onPastePath,
+  onFilter, onSearch, onSort, onSelect, onCancelScan,
 }: {
-  leftDir: string;
-  rightDir: string;
   summary: DirectorySummary | null;
   filteredItems: BatchListItem[];
   activeFilter: ActiveFilter;
@@ -45,15 +36,10 @@ export function Sidebar({
   onSearch(q: string): void;
   onSort(k: SortKey): void;
   onSelect(item: BatchListItem): void;
-  onPickLeft(): void;
-  onPickRight(): void;
   onCancelScan(): void;
-  onApplyPair(left: string, right: string): void;
-  onPastePath(side: 'left' | 'right', path: string): void;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; item: BatchListItem } | null>(null);
-  const [pickMenu, setPickMenu] = useState<'left' | 'right' | null>(null);
 
   // 单个稳定回调传给 memo 化的 Row，事件在 Row 内组装
   const handleMenu = useCallback((e: React.MouseEvent, item: BatchListItem) => {
@@ -80,16 +66,6 @@ export function Sidebar({
     };
   }, [menu]);
 
-  useEffect(() => {
-    if (!pickMenu) return;
-    const close = (e: MouseEvent) => {
-      const inside = (e.target as HTMLElement).closest('.sidebar__pickmenu, .sidebar__slot-path');
-      if (!inside) setPickMenu(null);
-    };
-    window.addEventListener('mousedown', close);
-    return () => window.removeEventListener('mousedown', close);
-  }, [pickMenu]);
-
   const counts = summary?.counts ?? null;
   const totalPairs = counts
     ? counts.identical + counts.different + counts.left_only + counts.right_only + counts.error
@@ -103,29 +79,6 @@ export function Sidebar({
 
   return (
     <aside className="sidebar">
-      <div className="sidebar__slots">
-        <DirChip label="左" path={leftDir} onOpen={() => setPickMenu(pickMenu === 'left' ? null : 'left')} />
-        <DirChip label="右" path={rightDir} onOpen={() => setPickMenu(pickMenu === 'right' ? null : 'right')} />
-        {pickMenu && (
-          <div className="sidebar__pickmenu">
-            <button type="button" onClick={() => { (pickMenu === 'left' ? onPickLeft : onPickRight)(); setPickMenu(null); }}>浏览…</button>
-            <input type="text" placeholder="粘贴路径后回车"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  const v = (e.target as HTMLInputElement).value.trim();
-                  if (v) { onPastePath(pickMenu, v); setPickMenu(null); }
-                } else if (e.key === 'Escape') setPickMenu(null);
-              }} />
-            {loadRecent('dir').map((p) => (
-              <button key={`${p.left}|${p.right}`} type="button" title={`${p.left}\n${p.right}`}
-                onClick={() => { onApplyPair(p.left, p.right); setPickMenu(null); }}>
-                {basename(p.left)} ⇄ {basename(p.right)}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
       <div className="sidebar__search">
         <input ref={searchRef} type="text" placeholder="搜索文件名…" value={searchQuery}
           onChange={(e) => onSearch(e.target.value)}
@@ -200,17 +153,6 @@ export function Sidebar({
         </div>
       )}
     </aside>
-  );
-}
-
-function DirChip({ label, path, onOpen }: { label: string; path: string; onOpen(): void }) {
-  return (
-    <div className="sidebar__slot">
-      <span className="sidebar__slot-side">{label}</span>
-      <button type="button" className="sidebar__slot-path" title={path || '未选择'} onClick={onOpen}>
-        {path ? `…\\${basename(path)}` : '选择目录'}
-      </button>
-    </div>
   );
 }
 

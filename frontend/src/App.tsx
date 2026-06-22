@@ -170,15 +170,11 @@ export default function App() {
       <div className="shell-body">
         {showSidebar && (
           <Sidebar
-            leftDir={wb.leftInput} rightDir={wb.rightInput}
             summary={wb.directorySummary} filteredItems={wb.filteredItems}
             activeFilter={wb.activeFilter} searchQuery={wb.searchQuery} sortKey={wb.sortKey}
             selectedItemId={wb.selectedItemId} isLoading={wb.isLoading} scanProgress={wb.scanProgress}
             onFilter={wb.setActiveFilter} onSearch={wb.setSearchQuery} onSort={wb.setSortKey}
             onSelect={handleSelect}
-            onPickLeft={() => void handlePickLeft()} onPickRight={() => void handlePickRight()}
-            onApplyPair={(l, r) => { wb.setLeftInput(l); wb.setRightInput(r); }}
-            onPastePath={(side, p) => wb.tryDropPath(side, p)}
             onCancelScan={() => void wb.cancelScan()}
           />
         )}
@@ -186,9 +182,7 @@ export default function App() {
         <main className="center">
           {showWelcome && (
             <WelcomePane mode={wb.mode}
-              onApplyPair={(l, r) => { wb.setLeftInput(l); wb.setRightInput(r); }}
-              onDrop={(side, p) => wb.tryDropPath(side, p)}
-              onPickLeft={() => void handlePickLeft()} onPickRight={() => void handlePickRight()} />
+              onApplyPair={(l, r) => { wb.setLeftInput(l); wb.setRightInput(r); }} />
           )}
 
           {((wb.view === 'mirror' && wb.pairResult !== null) || (wb.view === 'solo' && wb.soloResult !== null)) && (
@@ -249,19 +243,9 @@ export default function App() {
 }
 
 function DetailHeader({ wb, diffCount }: { wb: ReturnType<typeof useWorkbench>; diffCount: number }) {
-  const isSingle = wb.mode === 'single';
   const name = wb.view === 'mirror'
     ? wb.pairResult?.left.file_name
     : wb.soloResult?.file_name;
-  // 单文件模式下的左右文件芯片：mirror 取两侧文件；solo 已填一侧 + 可点击的占位另一侧
-  const chips = isSingle && (wb.view === 'mirror' || wb.view === 'solo')
-    ? (['left', 'right'] as const).map((side) => {
-        const info = wb.view === 'mirror'
-          ? wb.pairResult?.[side] ?? null
-          : (wb.soloSide === side ? wb.soloResult : null);
-        return { side, name: info?.file_name ?? null, path: info?.file_path ?? null };
-      })
-    : null;
   return (
     <div className="detail-head">
       <div className="detail-head__seg" role="group" aria-label="视图模式">
@@ -279,16 +263,6 @@ function DetailHeader({ wb, diffCount }: { wb: ReturnType<typeof useWorkbench>; 
         {wb.view === 'solo' && `仅查看${wb.soloSide === 'left' ? '左' : '右'} · `}{name}
       </span>
       <span className="detail-head__spacer" />
-      {chips && (
-        <span className="detail-head__chips">
-          {chips.map((c) => (
-            <button key={c.side} type="button" title={c.path ?? '点击选择文件'}
-              onClick={() => document.dispatchEvent(new CustomEvent(c.side === 'left' ? 'wb:pickLeft' : 'wb:pickRight'))}>
-              {c.side === 'left' ? '左' : '右'} ⌁ {c.name ?? '未选择'}
-            </button>
-          ))}
-        </span>
-      )}
       {wb.view === 'mirror' && (
         <span className="detail-head__hint">{diffCount > 0 ? `n/p 跳差异 · ${diffCount} 处` : '无差异'}</span>
       )}

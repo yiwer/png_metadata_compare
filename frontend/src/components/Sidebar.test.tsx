@@ -2,7 +2,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Sidebar } from './Sidebar';
-import { touchRecent } from '../lib/recentDirs';
 import type { BatchListItem, DirectorySummary } from '../lib/types';
 
 const items: BatchListItem[] = [
@@ -16,13 +15,11 @@ const summary: DirectorySummary = {
 
 function renderBar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
   const props = {
-    leftDir: 'C:/tmp/bim_v1', rightDir: 'C:/tmp/bim_v2',
     summary, filteredItems: items, activeFilter: 'all' as const,
     searchQuery: '', sortKey: 'diff-desc' as const,
     selectedItemId: '1', isLoading: false, scanProgress: null,
     onFilter: vi.fn(), onSearch: vi.fn(), onSort: vi.fn(), onSelect: vi.fn(),
-    onPickLeft: vi.fn(), onPickRight: vi.fn(), onCancelScan: vi.fn(),
-    onApplyPair: vi.fn(), onPastePath: vi.fn(),
+    onCancelScan: vi.fn(),
     ...over,
   };
   render(<Sidebar {...props} />);
@@ -68,20 +65,4 @@ describe('Sidebar', () => {
     expect(p.onSearch).toHaveBeenCalledWith('');
   });
 
-  it('dir chip opens a menu with recent pairs and applies one', () => {
-    touchRecent('dir', 'C:/x1', 'C:/x2');
-    const p = renderBar();
-    fireEvent.click(screen.getByTitle('C:/tmp/bim_v1'));
-    fireEvent.click(screen.getByText(/x1 ⇄ x2/));
-    expect(p.onApplyPair).toHaveBeenCalledWith('C:/x1', 'C:/x2');
-  });
-
-  it('pasting a path + Enter calls onPastePath for that side', () => {
-    const p = renderBar();
-    fireEvent.click(screen.getByTitle('C:/tmp/bim_v1'));
-    const input = screen.getByPlaceholderText('粘贴路径后回车');
-    fireEvent.change(input, { target: { value: 'D:/new' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-    expect(p.onPastePath).toHaveBeenCalledWith('left', 'D:/new');
-  });
 });
