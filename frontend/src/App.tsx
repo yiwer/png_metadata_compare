@@ -1,11 +1,10 @@
 // frontend/src/App.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openPath } from '@tauri-apps/plugin-opener';
-import { useImageTransform } from './lib/useImageTransform';
 import { workbenchApi } from './lib/api';
+import { ImageSplit, SoloImage } from './components/ImageViews';
 import { Sidebar } from './components/Sidebar';
 import { UnifiedTree } from './components/UnifiedTree';
 import type { FocusRequest } from './components/UnifiedTree';
@@ -186,7 +185,7 @@ export default function App() {
           {wb.view === 'solo' && wb.soloResult && (
             wb.viewMode === 'image' ? (
               // 图片视图不依赖元数据：无元数据的 PNG 也能看图
-              <SingleImage path={wb.soloResult.file_path} name={wb.soloResult.file_name} />
+              <SoloImage path={wb.soloResult.file_path} name={wb.soloResult.file_name} />
             ) : wb.viewMode === 'json' ? (
               wb.soloResult.raw_json
                 ? <RawJsonSplit left={wb.soloSide === 'left' ? wb.soloResult.raw_json : null}
@@ -315,61 +314,3 @@ function format(raw: string | null): string {
   try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
 }
 
-function SingleImage({ path, name }: { path: string; name: string }) {
-  return (
-    <div className="image-split">
-      <div className="image-split__panes">
-        <ImagePane key={path} path={path} name={name} transform="none" />
-      </div>
-    </div>
-  );
-}
-
-function ImageSplit({ leftPath, rightPath, leftName, rightName }: { leftPath: string; rightPath: string; leftName: string; rightName: string; }) {
-  const t = useImageTransform();
-  return (
-    <div className="image-split">
-      <div className="image-split__toolbar">
-        <button type="button" className="controlbar__btn" onClick={t.zoomOut}>−</button>
-        <span className="controlbar__summary" style={{ minWidth: 56, textAlign: 'center' }}>{Math.round(t.zoom * 100)}%</span>
-        <button type="button" className="controlbar__btn" onClick={t.zoomIn}>＋</button>
-        <button type="button" className="controlbar__btn" onClick={t.reset}>重置</button>
-        <span className="controlbar__spacer" />
-        <span className="controlbar__summary">滚轮缩放 · 拖拽平移（左右同步）</span>
-      </div>
-      <div
-        className={`image-split__panes${t.dragging ? ' image-split__panes--dragging' : ''}`}
-        onWheel={t.onWheel}
-        onMouseDown={t.onMouseDown}
-        onMouseMove={t.onMouseMove}
-        onMouseUp={t.endDrag}
-        onMouseLeave={t.endDrag}
-      >
-        <ImagePane key={leftPath} path={leftPath} name={leftName} transform={t.transform} />
-        <ImagePane key={rightPath} path={rightPath} name={rightName} transform={t.transform} />
-      </div>
-    </div>
-  );
-}
-
-function ImagePane({ path, name, transform }: { path: string; name: string; transform: string }) {
-  const url = convertFileSrc(path);
-  const [broken, setBroken] = useState(false);
-  return (
-    <div className="image-pane">
-      <div className="image-pane__viewport">
-        {broken ? (
-          <div className="image-pane__broken">无法加载图片</div>
-        ) : (
-          <img className="image-pane__img" src={url} alt={name} draggable={false}
-            style={{ transform, transformOrigin: 'center center' }}
-            onError={() => setBroken(true)} />
-        )}
-      </div>
-      <div className="image-pane__bar">
-        <span className="image-pane__name">{name}</span>
-        <button type="button" className="detail-head__btn" onClick={() => void openPath(path)}>打开原文件 ↗</button>
-      </div>
-    </div>
-  );
-}

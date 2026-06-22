@@ -281,6 +281,7 @@ input { font: inherit; color: inherit; background: transparent; border: 0; }
 }
 .image-split__panes--dragging { cursor: grabbing; }
 .image-split__panes--dragging * { user-select: none; }
+.image-split__panes--solo { grid-template-columns: 1fr; }
 
 /* === Image pane === */
 .image-pane {
