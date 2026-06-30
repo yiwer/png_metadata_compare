@@ -1628,10 +1628,10 @@ mod tests {
 
     #[test]
     fn non_wildcard_mismatch_still_modified() {
-        // School is in neither the wildcard nor the alias map → real diff.
+        // Park is in neither the wildcard nor the alias map → real diff.
         let cfg = config_with_bus_wildcard();
-        let left = MetadataLoadResult::Parsed(one_stop_line(json!("School")));
-        let right = MetadataLoadResult::Parsed(one_stop_line(json!("学校")));
+        let left = MetadataLoadResult::Parsed(one_stop_line(json!("Park")));
+        let right = MetadataLoadResult::Parsed(one_stop_line(json!("公园")));
 
         let diff = compare_metadata_with_config(&cfg, &left, &right);
         let node = locate(&diff, "Lines[B932].RouteStops[X].BuildingType");
@@ -1639,6 +1639,21 @@ mod tests {
             node.status,
             DiffStatus::Modified,
             "非通配 mismatch 必须仍为 Modified（守卫：通配不吞真实差异）"
+        );
+    }
+
+    #[test]
+    fn wildcard_value_matches_non_string_scalar_on_other_side() {
+        let cfg = config_with_bus_wildcard();
+        // Bus (wildcard) on the left vs a numeric BuildingType on the right.
+        let left = MetadataLoadResult::Parsed(one_stop_line(json!("Bus")));
+        let right = MetadataLoadResult::Parsed(one_stop_line(json!(42)));
+
+        let diff = compare_metadata_with_config(&cfg, &left, &right);
+        assert!(
+            flatten_changes(&diff).is_empty(),
+            "Bus 通配应匹配非字符串标量（Bus vs 42）: {:#?}",
+            flatten_changes(&diff)
         );
     }
 }
