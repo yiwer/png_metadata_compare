@@ -7,6 +7,8 @@ use std::sync::OnceLock;
 /// 1. `ignored_fields`：路径用 `[*]` 通配（同 schema），命中即跳过比对
 /// 2. `equivalence_maps`：字段值的别名表，比对前把 key 折叠成 value（大小写敏感）
 ///    例：`{"Metro": "地铁站"}` 会把左侧 "Metro" 与右侧 "地铁站" 视为等价
+///    特例：value 为 `"*"` 时该 key 视为通配值——出现在任意一边即与对侧任何值
+///    等价（含 null / 缺失）。例：`{"Bus": "*"}`。
 #[derive(Debug, Clone, Deserialize)]
 pub struct CompareConfig {
     #[serde(default)]
@@ -36,6 +38,9 @@ impl Default for CompareConfig {
     }
 }
 
+/// `equivalence_maps` target meaning "match any value on the other side".
+const WILDCARD_SENTINEL: &str = "*";
+
 impl CompareConfig {
     pub fn is_ignored(&self, normalized_path: &str) -> bool {
         self.ignored_fields
@@ -50,6 +55,16 @@ impl CompareConfig {
             .get(normalized_path)
             .and_then(|m| m.get(value).map(String::as_str))
             .unwrap_or(value)
+    }
+
+    /// Whether `value` at `normalized_path` is a wildcard — i.e. its
+    /// equivalence-map target is `"*"`. A wildcard value is equivalent to any
+    /// value on the other side (including null / a missing field).
+    pub fn is_wildcard(&self, normalized_path: &str, value: &str) -> bool {
+        self.equivalence_maps
+            .get(normalized_path)
+            .and_then(|m| m.get(value))
+            .is_some_and(|target| target == WILDCARD_SENTINEL)
     }
 }
 
@@ -152,5 +167,25 @@ mod tests {
         let cfg: CompareConfig = serde_json::from_str("{}").unwrap();
         assert!(cfg.ignored_fields.is_empty());
         assert!(cfg.equivalence_maps.is_empty());
+    }
+
+    #[test]
+    fn is_wildcard_true_only_for_star_target() {
+        let cfg: CompareConfig = serde_json::from_value(json!({
+            "equivalence_maps": {
+                "Lines[*].RouteStops[*].BuildingType": { "Metro": "地铁站", "Bus": "*" }
+            }
+        }))
+        .unwrap();
+        let path = "Lines[*].RouteStops[*].BuildingType";
+
+        // value mapped to "*" is a wildcard
+        assert!(cfg.is_wildcard(path, "Bus"));
+        // a normal alias target is not a wildcard
+        assert!(!cfg.is_wildcard(path, "Metro"));
+        // a value not present in the map is not a wildcard
+        assert!(!cfg.is_wildcard(path, "Unknown"));
+        // a path with no equivalence map is not a wildcard
+        assert!(!cfg.is_wildcard("Some.Other.Path", "Bus"));
     }
 }
