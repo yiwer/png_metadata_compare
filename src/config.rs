@@ -32,6 +32,7 @@ impl Default for CompareConfig {
                 "QRCode".to_string(),
                 "StopId".to_string(),
                 "Lines[*].LinePattern".to_string(),
+                "GroupItems[*].Distance".to_string(),
             ],
             equivalence_maps: maps,
         }
@@ -112,6 +113,7 @@ mod tests {
         assert!(cfg.is_ignored("QRCode"));
         assert!(cfg.is_ignored("StopId"));
         assert!(cfg.is_ignored("Lines[*].LinePattern"));
+        assert!(cfg.is_ignored("GroupItems[*].Distance"));
         assert!(!cfg.is_ignored("Lines[*].PriceDescription"));
     }
 

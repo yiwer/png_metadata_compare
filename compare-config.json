@@ -6,7 +6,8 @@
     "RenderTime",
     "QRCode",
     "StopId",
-    "Lines[*].LinePattern"
+    "Lines[*].LinePattern",
+    "GroupItems[*].Distance"
   ],
 
   "equivalence_maps": {
