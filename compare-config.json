@@ -21,6 +21,9 @@
       "School": "*",
       "PassengerStation": "*",
       "Bus": "*"
+    },
+    "Lines[*].ScheduledServiceDescription": {
+      "（工作日运营）": "（工作日运行）"
     }
   }
 }
