@@ -367,12 +367,25 @@ fn is_blank_value(value: &Value) -> bool {
 /// String values matching an entry in the equivalence map are folded to their canonical
 /// form before comparison; other types fall back to literal equality + blank-value
 /// equivalence (null / "" / [] are interchangeable).
+/// A value whose equivalence-map target is `"*"` is a wildcard: if it appears on either
+/// side, the scalar matches any value on the other side, including null.
 fn scalars_are_equivalent_at(cfg: &CompareConfig, path: &str, left: &Value, right: &Value) -> bool {
     if is_blank_value(left) && is_blank_value(right) {
         return true;
     }
+    let normalized = normalize_path_for_schema(path);
+    // 任一侧的字符串值映射到 "*" → 通配，匹配对侧任何值（含 null）。
+    if let Value::String(s) = left {
+        if cfg.is_wildcard(&normalized, s) {
+            return true;
+        }
+    }
+    if let Value::String(s) = right {
+        if cfg.is_wildcard(&normalized, s) {
+            return true;
+        }
+    }
     if let (Value::String(ls), Value::String(rs)) = (left, right) {
-        let normalized = normalize_path_for_schema(path);
         return cfg.canonicalize(&normalized, ls) == cfg.canonicalize(&normalized, rs);
     }
     left == right
@@ -1512,6 +1525,120 @@ mod tests {
         assert!(
             changes.is_empty(),
             "loop route with only Sequence shifts should produce zero diffs: {changes:#?}"
+        );
+    }
+
+    /// Config with a normal alias (Metro) plus a wildcard (Bus) on BuildingType.
+    fn config_with_bus_wildcard() -> CompareConfig {
+        serde_json::from_value(json!({
+            "equivalence_maps": {
+                "Lines[*].RouteStops[*].BuildingType": { "Metro": "地铁站", "Bus": "*" }
+            }
+        }))
+        .unwrap()
+    }
+
+    fn one_stop_line(building_type: serde_json::Value) -> serde_json::Value {
+        // building_type is spliced verbatim; pass json!(null) to omit-as-null,
+        // or json!("...") for a concrete value.
+        json!({
+            "Lines": [{
+                "LineName": "B932",
+                "Direction": "Terminal",
+                "RouteStops": [{ "Name": "X", "BuildingType": building_type }]
+            }]
+        })
+    }
+
+    #[test]
+    fn wildcard_value_matches_any_concrete_value_on_other_side() {
+        let cfg = config_with_bus_wildcard();
+        let left = MetadataLoadResult::Parsed(one_stop_line(json!("Bus")));
+        let right = MetadataLoadResult::Parsed(one_stop_line(json!("地铁站")));
+
+        let diff = compare_metadata_with_config(&cfg, &left, &right);
+        let changes = flatten_changes(&diff);
+        assert!(
+            changes.is_empty(),
+            "Bus 通配应与任意值等价（Bus vs 地铁站）: {changes:#?}"
+        );
+    }
+
+    #[test]
+    fn wildcard_value_matches_null_and_missing_both_directions() {
+        let cfg = config_with_bus_wildcard();
+
+        // Bus (left) vs explicit null (right)
+        let a = compare_metadata_with_config(
+            &cfg,
+            &MetadataLoadResult::Parsed(one_stop_line(json!("Bus"))),
+            &MetadataLoadResult::Parsed(one_stop_line(json!(null))),
+        );
+        assert!(
+            flatten_changes(&a).is_empty(),
+            "Bus vs null 应 Unchanged: {:#?}",
+            flatten_changes(&a)
+        );
+
+        // Bus (left) vs missing BuildingType (right) — schema fills null
+        let right_missing = json!({
+            "Lines": [{
+                "LineName": "B932",
+                "Direction": "Terminal",
+                "RouteStops": [{ "Name": "X" }]
+            }]
+        });
+        let b = compare_metadata_with_config(
+            &cfg,
+            &MetadataLoadResult::Parsed(one_stop_line(json!("Bus"))),
+            &MetadataLoadResult::Parsed(right_missing.clone()),
+        );
+        assert!(
+            flatten_changes(&b).is_empty(),
+            "Bus vs 缺失 应 Unchanged: {:#?}",
+            flatten_changes(&b)
+        );
+
+        // missing (left) vs Bus (right) — reverse direction
+        let c = compare_metadata_with_config(
+            &cfg,
+            &MetadataLoadResult::Parsed(right_missing),
+            &MetadataLoadResult::Parsed(one_stop_line(json!("Bus"))),
+        );
+        assert!(
+            flatten_changes(&c).is_empty(),
+            "缺失 vs Bus 应 Unchanged（对称）: {:#?}",
+            flatten_changes(&c)
+        );
+    }
+
+    #[test]
+    fn normal_alias_still_collapses_alongside_wildcard() {
+        let cfg = config_with_bus_wildcard();
+        let left = MetadataLoadResult::Parsed(one_stop_line(json!("Metro")));
+        let right = MetadataLoadResult::Parsed(one_stop_line(json!("地铁站")));
+
+        let diff = compare_metadata_with_config(&cfg, &left, &right);
+        assert!(
+            flatten_changes(&diff).is_empty(),
+            "Metro↔地铁站 普通别名应仍折叠: {:#?}",
+            flatten_changes(&diff)
+        );
+    }
+
+    #[test]
+    fn non_wildcard_mismatch_still_modified() {
+        // School is in neither the wildcard nor the alias map → real diff.
+        let cfg = config_with_bus_wildcard();
+        let left = MetadataLoadResult::Parsed(one_stop_line(json!("School")));
+        let right = MetadataLoadResult::Parsed(one_stop_line(json!("学校")));
+
+        let diff = compare_metadata_with_config(&cfg, &left, &right);
+        let node = locate(&diff, "Lines[B932].RouteStops[X].BuildingType");
+        assert_eq!(
+            node.status,
+            DiffStatus::Modified,
+            "非通配 mismatch 必须仍为 Modified（守卫：通配不吞真实差异）"
         );
     }
 }
