@@ -7,7 +7,8 @@
     "QRCode",
     "StopId",
     "Lines[*].LinePattern",
-    "GroupItems[*].Distance"
+    "GroupItems[*].Distance",
+    "Lines[*].FirstStopName"
   ],
 
   "equivalence_maps": {
